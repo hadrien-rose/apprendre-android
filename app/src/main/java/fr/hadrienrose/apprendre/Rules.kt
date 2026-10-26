@@ -1,0 +1,156 @@
+package fr.hadrienrose.apprendre
+
+import java.io.File
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/**
+ * Les règles PURES de l'app (testées sans Android, app/src/test) : où la fenêtre peut aller et ce qu'elle peut charger,
+ * l'heure du rappel, le fichier confiné d'une photo, ce que demande un champ <input type="file">, les versions.
+ */
+object Rules {
+    /** Le site de Prisme : la fenêtre n'y va que pour la page Apprendre. */
+    const val HOST = "chat.hadrien-rose.com"
+    /** Le login Cloudflare Access (code par e-mail) : autorisé dans la fenêtre. */
+    private val LOGIN_HOSTS = listOf("cloudflareaccess.com")
+    /** Où la fenêtre peut ALLER sur notre site : la page, et le retour du login Access (/cdn-cgi/access/authorized). */
+    private val NAV_EXACT = setOf("/apprendre")
+    private val NAV_PREFIXES = listOf("/apprendre/", "/cdn-cgi/access/")
+    /** Ce que la page peut CHARGER sur notre site : elle-même, son API, ses polices, les scripts de Cloudflare. */
+    private val LOAD_EXACT = setOf("/apprendre", "/api/apprendre")
+    private val LOAD_PREFIXES = listOf("/apprendre/", "/api/apprendre/", "/fonts/", "/cdn-cgi/")
+    /** Les adresses des APK publiées (l'Updater n'en télécharge aucune autre). */
+    const val RELEASES = "https://github.com/hadrien-rose/apprendre-android/releases/download/"
+
+    /** Le rappel : chaque jour à 8 h, heure de Paris (où que soit le téléphone). */
+    val ZONE: ZoneId = ZoneId.of("Europe/Paris")
+    const val REMIND_HOUR = 8
+    const val DAY_MS = 24 * 3600 * 1000L
+
+    private val PHOTO_RE = Regex("^photo-[0-9]{8}-[0-9]{6}(-[0-9]{1,3})?\\.jpg$")
+    private val IMAGE_EXT = setOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif")
+
+    fun isSiteHost(host: String?): Boolean = host.equals(HOST, ignoreCase = true)
+
+    fun isLoginHost(host: String?): Boolean {
+        if (host.isNullOrBlank()) return false
+        val h = host.lowercase()
+        return LOGIN_HOSTS.any { h == it || h.endsWith(".$it") }
+    }
+
+    /** Un chemin propre : absolu, sans « . » ni « .. », sans point, barre ou antislash encodés, sans « // ». */
+    fun isCleanPath(path: String?): Boolean {
+        if (path == null || !path.startsWith("/")) return false
+        val low = path.lowercase()
+        if ('\\' in path || "//" in path || "%2e" in low || "%2f" in low || "%5c" in low) return false
+        return path.split('/').none { it == "." || it == ".." }
+    }
+
+    private fun under(path: String, exact: Set<String>, prefixes: List<String>) = path in exact || prefixes.any { path.startsWith(it) }
+
+    /** La fenêtre peut-elle aller là ? Sinon le lien s'ouvre dans le navigateur. */
+    fun canNavigate(scheme: String?, host: String?, path: String?): Boolean {
+        if (!scheme.equals("https", ignoreCase = true)) return false
+        if (isLoginHost(host)) return true
+        if (!isSiteHost(host)) return false
+        val p = if (path.isNullOrEmpty()) "/" else path
+        return isCleanPath(p) && under(p, NAV_EXACT, NAV_PREFIXES)
+    }
+
+    /**
+     * La page affichée (`pageHost`) peut-elle charger cette adresse (http ou https) ? Sur notre site, ses seuls chemins ;
+     * le login Cloudflare charge ce qu'il veut ; notre page ne charge rien d'ailleurs.
+     */
+    fun canLoad(pageHost: String?, scheme: String?, host: String?, path: String?): Boolean {
+        if (!scheme.equals("https", ignoreCase = true)) return false
+        if (isSiteHost(host)) {
+            val p = if (path.isNullOrEmpty()) "/" else path
+            return isCleanPath(p) && under(p, LOAD_EXACT, LOAD_PREFIXES)
+        }
+        if (isLoginHost(host)) return true
+        return isLoginHost(pageHost)
+    }
+
+    // ---------- les fichiers : <input type="file" accept=… capture=…> ----------
+
+    /** Les types d'un attribut accept (WebView les rend en tableau, parfois en une chaîne à virgules). */
+    fun acceptList(types: Array<String>?): List<String> =
+        (types ?: emptyArray()).flatMap { it.split(',') }.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+
+    private fun isImageType(t: String) = t.startsWith("image/") || t in IMAGE_EXT
+
+    /** Le champ n'accepte que des images (« 📷 Photographier une page », un accept d'images seulement). */
+    fun imagesOnly(accept: List<String>): Boolean = accept.isNotEmpty() && accept.all { isImageType(it) }
+
+    /** Le champ accepte au moins une image : l'appareil photo est proposé à côté des fichiers. Rien de précisé = tout. */
+    fun acceptsImages(accept: List<String>): Boolean = accept.isEmpty() || accept.any { isImageType(it) }
+
+    /** capture="environment" sur un champ d'images = l'appareil photo tout de suite, sans sélecteur. */
+    fun cameraDirect(accept: List<String>, capture: Boolean): Boolean = capture && imagesOnly(accept)
+
+    /**
+     * Le type demandé au sélecteur d'Android : les images pour un champ d'images, sinon tout — les
+     * sélecteurs filtrent mal un .md ou un .doc par type, et c'est le SERVEUR qui refuse un format (`sniff_ok`).
+     */
+    fun pickerMime(accept: List<String>): String = if (imagesOnly(accept)) "image/*" else "*/*"
+
+    /** Ce que la page reçoit : les fichiers choisis, sinon la photo si l'appareil l'a écrite (non vide), sinon rien. */
+    fun pickResult(chosen: List<String>, photo: String?, photoBytes: Long): List<String> = when {
+        chosen.isNotEmpty() -> chosen
+        photo != null && photoBytes > 0 -> listOf(photo)
+        else -> emptyList()
+    }
+
+    // ---------- la photo prise pour la page ----------
+
+    /** « photo-AAAAMMJJ-HHMMSS.jpg » à l'heure de Paris (le nom que la page et Prisme verront), `k` pour départager. */
+    fun photoName(now: Long, k: Int = 0): String {
+        val s = Instant.ofEpochMilli(now).atZone(ZONE).format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+        return if (k > 0) "photo-$s-$k.jpg" else "photo-$s.jpg"
+    }
+
+    /** Le fichier d'une photo, CONFINÉ au dossier des photos (jamais un chemin libre), ou null. */
+    fun photoFile(root: File, name: String?): File? {
+        if (name == null || !PHOTO_RE.matches(name)) return null
+        val f = File(root, name)
+        val rootC = root.canonicalFile.path + File.separator
+        return if (f.canonicalFile.path.startsWith(rootC)) f else null
+    }
+
+    // ---------- le rappel de 8 h ----------
+
+    /** L'instant du prochain rappel, STRICTEMENT après `now` : aujourd'hui à 8 h (Paris) s'il est encore à venir, sinon demain. */
+    fun nextReminderAt(now: Long, hour: Int = REMIND_HOUR): Long {
+        val z = Instant.ofEpochMilli(now).atZone(ZONE)
+        var t = z.toLocalDate().atTime(hour, 0).atZone(ZONE)
+        if (t.toInstant().toEpochMilli() <= now) t = z.toLocalDate().plusDays(1).atTime(hour, 0).atZone(ZONE)
+        return t.toInstant().toEpochMilli()
+    }
+
+    /** Le jour de Paris d'un instant (« 2026-10-27 »). */
+    fun parisDay(now: Long): String = Instant.ofEpochMilli(now).atZone(ZONE).toLocalDate().toString()
+
+    /** L'alarme sonne : une notification par jour au plus, et jamais avant 8 h (heure changée à la main). */
+    fun shouldNotify(lastDay: String?, now: Long, hour: Int = REMIND_HOUR): Boolean {
+        val z = Instant.ofEpochMilli(now).atZone(ZONE)
+        return z.toLocalDate().toString() != lastDay && !z.toLocalTime().isBefore(LocalTime.of(hour, 0))
+    }
+
+    // ---------- les versions ----------
+
+    /** Vrai si la version publiée (code) est plus récente que l'installée. */
+    fun isNewer(latestCode: Int, installedCode: Int): Boolean = latestCode > installedCode
+
+    /**
+     * La fenêtre « Nouvelle version » à l'ouverture : une version plus récente, pas encore proposée, ou proposée il y a
+     * plus d'un jour (« Plus tard » ne revient pas à chaque ouverture).
+     */
+    fun shouldPrompt(latestCode: Int, installedCode: Int, promptedCode: Int, promptedAt: Long, now: Long): Boolean =
+        isNewer(latestCode, installedCode) && (promptedCode != latestCode || now - promptedAt >= DAY_MS)
+
+    /** Une APK publiée par ce dépôt, en HTTPS, et rien d'autre. */
+    fun isReleaseApk(url: String?): Boolean =
+        url != null && url.startsWith(RELEASES) && url.endsWith(".apk") && isCleanPath(url.removePrefix("https://github.com"))
+}

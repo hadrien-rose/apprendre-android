@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Apprendre</string>
+    <string name="channel_name">Rappel du jour</string>
+    <string name="channel_desc">Une notification par jour à 8 h : ta séance t\'attend</string>
+    <string name="remind_title">🧠 Apprendre</string>
+    <string name="remind_text">Ta séance du jour t\'attend</string>
+    <string name="pick_title">Ajouter un fichier</string>
+    <string name="sc_settings">Réglages</string>
+    <string name="sc_settings_long">Réglages : le rappel de 8 h</string>
+    <string name="sc_update">Mise à jour</string>
+    <string name="check_updates">Vérifier les mises à jour</string>
+    <string name="set_title">Apprendre</string>
+    <string name="set_reminder">Me rappeler chaque jour à 8 h</string>
+    <string name="set_off">Aucun rappel.</string>
+    <string name="set_blocked">Android bloque les notifications d\'Apprendre : touche ici pour les autoriser.</string>
+    <string name="set_next">Prochain rappel : %1$s, 8 h (heure de Paris).</string>
+    <string name="set_version">Apprendre %1$s · Android %2$s</string>
+    <string name="close">Fermer</string>
+    <string name="later">Plus tard</string>
+    <string name="checking">Recherche d\'une mise à jour…</string>
+    <string name="check_failed">Impossible de vérifier : %1$s</string>
+    <string name="up_to_date">Apprendre est à jour (%1$s).</string>
+    <string name="upd_title">Nouvelle version %1$s</string>
+    <string name="upd_installed">Installée : %1$s</string>
+    <string name="upd_go">Mettre à jour</string>
+    <string name="upd_running">Mise à jour</string>
+    <string name="upd_download">Téléchargement… %1$d %%</string>
+    <string name="upd_verified">Vérifiée (empreinte et signature). Confirme l\'installation sur l\'écran d\'Android.</string>
+    <string name="upd_confirm">Confirme l\'installation sur l\'écran d\'Android.</string>
+    <string name="upd_failed">La mise à jour n\'a pas abouti</string>
+    <string name="upd_refused">Mise à jour impossible : %1$s</string>
+    <string name="unknown_title">Une autorisation d\'abord</string>
+    <string name="unknown_body">Android demande d\'autoriser Apprendre à installer ses mises à jour (« Sources inconnues »). Active-la, puis reviens : la mise à jour reprend seule.</string>
+    <string name="unknown_open">Ouvrir le réglage</string>
+    <string name="offline_title">Pas de réseau</string>
+    <string name="offline_body">Apprendre a besoin du réseau pour afficher ta page.</string>
+    <string name="offline_retry">Réessayer</string>
+</resources>
