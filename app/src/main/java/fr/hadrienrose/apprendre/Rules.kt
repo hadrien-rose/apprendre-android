@@ -34,6 +34,9 @@ object Rules {
 
     fun isSiteHost(host: String?): Boolean = host.equals(HOST, ignoreCase = true)
 
+    /** Le résultat de evaluateJavascript (« 1 », « 0 », « null », une chaîne entre guillemets) : un champ a-t-il le focus ? */
+    fun wantsKeyboard(jsResult: String?): Boolean = jsResult?.trim()?.trim('"') == "1"
+
     fun isLoginHost(host: String?): Boolean {
         if (host.isNullOrBlank()) return false
         val h = host.lowercase()

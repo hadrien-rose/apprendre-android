@@ -189,4 +189,14 @@ class RulesTest {
         assertFalse(Rules.isReleaseApk("https://github.com/hadrien-rose/apprendre-android/releases/download/v1/a.zip"))
         assertFalse(Rules.isReleaseApk(null))
     }
+
+    @Test fun leClavierSOuvreSiUnChampALeFocus() {
+        assertTrue(Rules.wantsKeyboard("1"))
+        assertTrue(Rules.wantsKeyboard(" 1 "))
+        assertTrue(Rules.wantsKeyboard("\"1\""))
+        assertFalse(Rules.wantsKeyboard("0"))
+        assertFalse(Rules.wantsKeyboard("null"))
+        assertFalse(Rules.wantsKeyboard("11"))
+        assertFalse(Rules.wantsKeyboard(null))
+    }
 }

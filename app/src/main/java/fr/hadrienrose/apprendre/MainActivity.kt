@@ -21,6 +21,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -58,6 +59,7 @@ class MainActivity : Activity() {
         const val ACTION_RETENIR = "fr.hadrienrose.apprendre.RETENIR"
         const val REQ_FILES = 21
         const val REQ_NOTIF = 22
+        private const val FIELD_FOCUSED_JS = "(function(){var t=document.activeElement;return t&&(t.tagName==='TEXTAREA'||t.tagName==='INPUT')&&t.offsetParent?1:0})()"
         private const val PREF = "apprendre"
         private const val KEY_NOTIF_ASKED = "notif_asked"
     }
@@ -141,6 +143,7 @@ class MainActivity : Activity() {
             }
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
+                if (Rules.isSiteHost(Uri.parse(url).host)) keyboardForFirstField(12)
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
                 if (request.isForMainFrame && Rules.isSiteHost(request.url.host)) showOffline(error.description?.toString() ?: "")
@@ -155,6 +158,24 @@ class MainActivity : Activity() {
             }
         }
         web.setDownloadListener { url, _, _, _, _ -> openOutside(Uri.parse(url)) }
+    }
+
+    /**
+     * « Le clavier s'ouvre tout seul sur chaque carte » (choix d'Hadrien, 27/10) : la page met le curseur dans le champ de
+     * réponse, mais Android n'ouvre pas le clavier pour un focus sans toucher. Au chargement, l'app regarde (jusqu'à
+     * 12 × 250 ms, le temps que la carte arrive) si un champ a le focus, et ouvre alors le clavier elle-même. D'une carte
+     * à l'autre, c'est la page qui garde le champ et le toucher d'Hadrien qui le rouvre.
+     */
+    private fun keyboardForFirstField(tries: Int) {
+        main.postDelayed({
+            if (isFinishing) return@postDelayed
+            web.evaluateJavascript(FIELD_FOCUSED_JS) { r ->
+                if (Rules.wantsKeyboard(r)) {
+                    web.requestFocus()
+                    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(web, InputMethodManager.SHOW_IMPLICIT)
+                } else if (tries > 1) keyboardForFirstField(tries - 1)
+            }
+        }, 250)
     }
 
     private fun blocked() = WebResourceResponse("text/plain", "utf-8", 403, "Forbidden",
