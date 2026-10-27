@@ -2,10 +2,12 @@
 <resources>
     <string name="app_name">Apprendre</string>
     <string name="channel_name">Rappel du jour</string>
-    <string name="channel_desc">Une notification par jour à 8 h : ta séance t\'attend</string>
+    <string name="channel_desc">Une notification par jour à 8 h : le nombre de cartes à revoir</string>
     <string name="remind_title">🧠 Apprendre</string>
-    <string name="remind_text">Ta séance du jour t\'attend</string>
+    <string name="remind_text">Tes cartes du jour t\'attendent</string>
     <string name="pick_title">Ajouter un fichier</string>
+    <string name="sc_retenir">Retenir…</string>
+    <string name="sc_retenir_long">Retenir quelque chose</string>
     <string name="sc_settings">Réglages</string>
     <string name="sc_settings_long">Réglages : le rappel de 8 h</string>
     <string name="sc_update">Mise à jour</string>

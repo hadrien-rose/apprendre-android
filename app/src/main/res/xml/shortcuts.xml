@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Le menu de l'app : appui long sur l'icône Apprendre (paquet de release ; la version de débogage n'a pas ce menu). -->
+<!-- Le menu de l'app : appui long sur l'icône Apprendre (Retenir…, Réglages, Vérifier les mises à jour) (paquet de release ; la version de débogage n'a pas ce menu). -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="retenir"
+        android:enabled="true"
+        android:icon="@drawable/ic_sc_add"
+        android:shortcutShortLabel="@string/sc_retenir"
+        android:shortcutLongLabel="@string/sc_retenir_long">
+        <intent
+            android:action="fr.hadrienrose.apprendre.RETENIR"
+            android:targetPackage="fr.hadrienrose.apprendre"
+            android:targetClass="fr.hadrienrose.apprendre.MainActivity" />
+    </shortcut>
     <shortcut
         android:shortcutId="reglages"
         android:enabled="true"

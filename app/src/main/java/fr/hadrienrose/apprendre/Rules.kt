@@ -150,6 +150,43 @@ object Rules {
     fun shouldPrompt(latestCode: Int, installedCode: Int, promptedCode: Int, promptedAt: Long, now: Long): Boolean =
         isNewer(latestCode, installedCode) && (promptedCode != latestCode || now - promptedAt >= DAY_MS)
 
+    // ---------- « tout est carte » (27/10) : retenir d'ailleurs, le rappel avec le nombre ----------
+
+    const val SHARE_MAX = 2000
+
+    /**
+     * L'adresse de « ＋ Ajouter » dans la page, avec un texte à retenir (Partager depuis une autre app) : le texte voyage dans le
+     * fragment (#add&text=…), jamais au serveur ; coupé à SHARE_MAX caractères, encodé (espaces en %20, rien d'interprétable).
+     */
+    fun addUrl(start: String, text: String?): String {
+        val base = start.substringBefore('#') + "#add"
+        val t = (text ?: "").replace("\r\n", "\n").trim().take(SHARE_MAX)
+        return if (t.isEmpty()) base else base + "&text=" + java.net.URLEncoder.encode(t, "UTF-8").replace("+", "%20")
+    }
+
+    /** Ce qu'on partage : le texte, précédé du sujet s'il en apporte (le titre d'une page partagée depuis le navigateur). */
+    fun sharedText(subject: String?, text: String?): String {
+        val s = (subject ?: "").trim(); val t = (text ?: "").trim()
+        return if (s.isNotEmpty() && t.isNotEmpty() && !t.contains(s)) "$s — $t" else t.ifEmpty { s }
+    }
+
+    /** Le nombre de cartes à revoir lu dans la réponse de /api/apprendre/review/count ({"due": n}), ou null. */
+    fun parseDue(body: String?): Int? {
+        val m = Regex("^\\s*\\{\\s*\"due\"\\s*:\\s*(\\d{1,6})\\s*}\\s*$").find(body ?: "") ?: return null
+        return m.groupValues[1].toInt()
+    }
+
+    /**
+     * Le texte du rappel : le nombre de cartes à revoir (rien d'un dossier), ou le texte d'avant quand Prisme n'a pas répondu
+     * (hors ligne, login expiré). Zéro carte : pas de rappel (null).
+     */
+    fun remindText(due: Int?, fallback: String): String? = when {
+        due == null -> fallback
+        due <= 0 -> null
+        due == 1 -> "1 carte à revoir"
+        else -> "$due cartes à revoir"
+    }
+
     /** Une APK publiée par ce dépôt, en HTTPS, et rien d'autre. */
     fun isReleaseApk(url: String?): Boolean =
         url != null && url.startsWith(RELEASES) && url.endsWith(".apk") && isCleanPath(url.removePrefix("https://github.com"))

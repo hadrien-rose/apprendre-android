@@ -42,18 +42,20 @@ import java.io.File
 import java.util.Date
 
 /**
- * L'app Apprendre = LA PAGE DE PRISME (`chat.hadrien-rose.com/apprendre?app=1`, la même page qu'au téléphone : barre du
- * bas, « Aujourd'hui », un jeu par écran) dans une WebView, et rien d'autre que ce qu'un navigateur ne sait pas faire
- * bien : les fichiers et l'appareil photo des champs <input type="file">, la mise à jour, le rappel de 8 h.
+ * L'app Apprendre = LA PAGE DE PRISME (`chat.hadrien-rose.com/apprendre?app=1`, la même page qu'au téléphone : on ouvre,
+ * il y a une carte ; Cartes · ＋ Ajouter · Thèmes) dans une WebView, et rien d'autre que ce qu'un navigateur ne sait pas
+ * faire bien : les fichiers et l'appareil photo des champs <input type="file">, la mise à jour, le rappel de 8 h (avec le
+ * nombre de cartes à revoir), « Retenir… » et « Partager → Apprendre » qui ouvrent « ＋ Ajouter ».
  * La fenêtre ne va que sur la page Apprendre et le login Cloudflare (code par e-mail) ; la page ne charge que son API et
  * ses polices (Rules) ; tout autre lien s'ouvre dans le navigateur. Aucun pont JS : la page ne voit rien du téléphone.
- * Le menu de l'app = l'appui long sur son icône (« Réglages », « Vérifier les mises à jour »).
+ * Le menu de l'app = l'appui long sur son icône (« Retenir… », « Réglages », « Vérifier les mises à jour »).
  */
 class MainActivity : Activity() {
     companion object {
         const val START_URL = BuildConfig.SITE + "/apprendre?app=1"
         const val ACTION_SETTINGS = "fr.hadrienrose.apprendre.SETTINGS"
         const val ACTION_CHECK = "fr.hadrienrose.apprendre.CHECK_UPDATE"
+        const val ACTION_RETENIR = "fr.hadrienrose.apprendre.RETENIR"
         const val REQ_FILES = 21
         const val REQ_NOTIF = 22
         private const val PREF = "apprendre"
@@ -80,8 +82,8 @@ class MainActivity : Activity() {
         Reminder.schedule(this)
         PhotoProvider.purge(this)
         askNotificationsOnce()
-        web.loadUrl(START_URL)
-        handleIntent(intent)
+        web.loadUrl(addUrlFor(intent) ?: START_URL)
+        handleIntent(intent, false)
         Updater.checkLater(this) { info -> main.post { if (!isFinishing && Updater.shouldPrompt(this, info)) showUpdate(info) } }
     }
 
@@ -222,10 +224,23 @@ class MainActivity : Activity() {
 
     // ---------- le menu (appui long sur l'icône) : réglages et mise à jour ----------
 
-    private fun handleIntent(i: Intent?) {
+    /**
+     * « Retenir… » (appui long sur l'icône) et « Partager → Apprendre » depuis une autre app (27/10, « tout est carte ») : la page
+     * s'ouvre sur « ＋ Ajouter », le texte partagé déjà écrit (dans le fragment de l'adresse, jamais envoyé au serveur avant
+     * qu'Hadrien ne touche « Claude fait »). Rien d'autre : un fichier partagé n'est pas pris (la page a son 📎).
+     */
+    private fun addUrlFor(i: Intent?): String? = when (i?.action) {
+        ACTION_RETENIR -> Rules.addUrl(START_URL, null)
+        Intent.ACTION_SEND -> Rules.addUrl(START_URL, Rules.sharedText(i.getStringExtra(Intent.EXTRA_SUBJECT),
+            i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()))
+        else -> null
+    }
+
+    private fun handleIntent(i: Intent?, fresh: Boolean = true) {
         when (i?.action) {
             ACTION_SETTINGS -> main.post { showSettings() }
             ACTION_CHECK -> main.post { checkNow() }
+            ACTION_RETENIR, Intent.ACTION_SEND -> if (fresh) addUrlFor(i)?.let { u -> main.post { web.loadUrl(u) } }
         }
     }
 

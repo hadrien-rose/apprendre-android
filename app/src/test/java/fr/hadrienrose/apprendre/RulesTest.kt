@@ -155,6 +155,32 @@ class RulesTest {
         assertTrue(Rules.shouldPrompt(103, 101, 102, now - 60_000, now))                   // une autre version
     }
 
+    @Test fun partagerVersAjouter() {
+        val start = "https://chat.hadrien-rose.com/apprendre?app=1"
+        assertEquals("$start#add", Rules.addUrl(start, null))
+        assertEquals("$start#add", Rules.addUrl("$start#t=3", "  "))
+        assertEquals("$start#add&text=Observer%20sans%20%C3%A9valuer%20%26%20co", Rules.addUrl(start, "Observer sans évaluer & co"))
+        val long = "x".repeat(5000)
+        assertEquals(Rules.SHARE_MAX, java.net.URLDecoder.decode(Rules.addUrl(start, long).substringAfter("text="), "UTF-8").length)
+        assertTrue(Rules.addUrl(start, "a#b").endsWith("text=a%23b"))       // un # du texte ne coupe pas l'adresse
+        assertEquals("Le titre — le texte", Rules.sharedText("Le titre", "le texte"))
+        assertEquals("https://x.fr/page", Rules.sharedText("La page", "https://x.fr/page").substringAfter(" — "))
+        assertEquals("le texte qui dit Le titre", Rules.sharedText("Le titre", "le texte qui dit Le titre"))
+        assertEquals("Le titre", Rules.sharedText("Le titre", null))
+    }
+
+    @Test fun leRappelDitLeNombre() {
+        assertEquals(7, Rules.parseDue("{\"due\": 7}"))
+        assertEquals(0, Rules.parseDue(" {\"due\":0} "))
+        assertNull(Rules.parseDue("<html>Cloudflare Access</html>"))      // login expiré : la page d'Access
+        assertNull(Rules.parseDue("{\"due\": 7, \"themes\": []}"))      // autre chose qu'un nombre : refusé
+        assertNull(Rules.parseDue(null))
+        assertEquals("1 carte à revoir", Rules.remindText(1, "x"))
+        assertEquals("7 cartes à revoir", Rules.remindText(7, "x"))
+        assertNull(Rules.remindText(0, "x"))
+        assertEquals("ta séance", Rules.remindText(null, "ta séance"))
+    }
+
     @Test fun seulesLesApkDeCeDepot() {
         assertTrue(Rules.isReleaseApk("https://github.com/hadrien-rose/apprendre-android/releases/download/v1.0.3/apprendre-1.0.3.apk"))
         assertFalse(Rules.isReleaseApk("https://github.com/hadrien-rose/dictee-android/releases/download/v1.0.3/dictee-1.0.3.apk"))
