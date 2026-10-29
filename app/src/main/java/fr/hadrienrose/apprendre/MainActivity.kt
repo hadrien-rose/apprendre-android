@@ -23,6 +23,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -48,7 +49,8 @@ import java.util.Date
  * faire bien : les fichiers et l'appareil photo des champs <input type="file">, la mise à jour, le rappel de 8 h (avec le
  * nombre de cartes à revoir), « Retenir… » et « Partager → Apprendre » qui ouvrent « ＋ Ajouter ».
  * La fenêtre ne va que sur la page Apprendre et le login Cloudflare (code par e-mail) ; la page ne charge que son API et
- * ses polices (Rules) ; tout autre lien s'ouvre dans le navigateur. Aucun pont JS : la page ne voit rien du téléphone.
+ * ses polices (Rules) ; tout autre lien s'ouvre dans le navigateur. UN pont JS (1.3, 29/10) : `ApprendreNative.alarm(json)`,
+ * par lequel la page pose l'alarme des cartes ratées (Alarm) ; il n'écoute que la page de Prisme et ne rend rien.
  * Le menu de l'app = l'appui long sur son icône (« Retenir… », « Réglages », « Vérifier les mises à jour »).
  */
 class MainActivity : Activity() {
@@ -57,11 +59,13 @@ class MainActivity : Activity() {
         const val ACTION_SETTINGS = "fr.hadrienrose.apprendre.SETTINGS"
         const val ACTION_CHECK = "fr.hadrienrose.apprendre.CHECK_UPDATE"
         const val ACTION_RETENIR = "fr.hadrienrose.apprendre.RETENIR"
+        const val ACTION_RATEES = "fr.hadrienrose.apprendre.RATEES_OPEN"
         const val REQ_FILES = 21
         const val REQ_NOTIF = 22
         private const val FIELD_FOCUSED_JS = "(function(){var t=document.activeElement;return t&&(t.tagName==='TEXTAREA'||t.tagName==='INPUT')&&t.offsetParent?1:0})()"
         private const val PREF = "apprendre"
         private const val KEY_NOTIF_ASKED = "notif_asked"
+        private const val KEY_ALARM_ASKED = "alarm_perm_asked"
     }
 
     lateinit var web: WebView
@@ -158,6 +162,54 @@ class MainActivity : Activity() {
             }
         }
         web.setDownloadListener { url, _, _, _, _ -> openOutside(Uri.parse(url)) }
+        web.addJavascriptInterface(NativeBridge(), "ApprendreNative")
+    }
+
+    /**
+     * Le pont de la page (1.3) : `alarm(json)` = l'heure, le nombre et les réglages de l'alarme des cartes ratées ({at: 0} =
+     * rien à sonner). Seule la page de Prisme est écoutée ; tout est revérifié (Rules.parseAlarm) ; rien ne revient à la page.
+     */
+    inner class NativeBridge {
+        @JavascriptInterface
+        fun alarm(json: String?) {
+            if (!Rules.isSiteHost(pageHost)) return
+            val s = Rules.parseAlarm(json, System.currentTimeMillis())
+            Alarm.set(applicationContext, s)
+            if (s != null) main.post { askAlarmOnce() }
+        }
+    }
+
+    /**
+     * La première alarme posée : si Android ne permet pas encore l'heure exacte (« Alarmes et rappels ») ou le plein écran,
+     * on le dit une fois et on ouvre le bon réglage ; ensuite, la ligne des réglages de l'app le rappelle.
+     */
+    private fun askAlarmOnce() {
+        if (isFinishing) return
+        val p = getSharedPreferences(PREF, MODE_PRIVATE)
+        if (p.getBoolean(KEY_ALARM_ASKED, false)) return
+        val action = alarmFixAction() ?: return
+        p.edit().putBoolean(KEY_ALARM_ASKED, true).apply()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle(R.string.rat_perm_title).setMessage(R.string.rat_perm_body)
+            .setPositiveButton(R.string.unknown_open) { _, _ -> openAlarmFix(action) }
+            .setNegativeButton(R.string.later, null).show()
+    }
+
+    /** Le réglage d'Android qui manque à l'alarme, ou null si elle est prête. */
+    private fun alarmFixAction(): String? = when {
+        !Alarm.exactAllowed(this) && Build.VERSION.SDK_INT >= 31 -> Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+        !Alarm.fullScreenAllowed(this) && Build.VERSION.SDK_INT >= 34 -> Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+        else -> null
+    }
+
+    private fun openAlarmFix(action: String) {
+        try { startActivity(Intent(action, Uri.parse("package:$packageName"))) } catch (_: Exception) { }
+    }
+
+    private fun alarmLine(): String = when {
+        alarmFixAction() == Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM -> getString(R.string.rat_line_exact)
+        alarmFixAction() != null -> getString(R.string.rat_line_full)
+        else -> getString(R.string.rat_line_ok)
     }
 
     /**
@@ -252,6 +304,7 @@ class MainActivity : Activity() {
      */
     private fun addUrlFor(i: Intent?): String? = when (i?.action) {
         ACTION_RETENIR -> Rules.addUrl(START_URL, null)
+        ACTION_RATEES -> { Alarm.stop(this); Rules.ratUrl(START_URL) }
         Intent.ACTION_SEND -> Rules.addUrl(START_URL, Rules.sharedText(i.getStringExtra(Intent.EXTRA_SUBJECT),
             i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()))
         else -> null
@@ -261,7 +314,7 @@ class MainActivity : Activity() {
         when (i?.action) {
             ACTION_SETTINGS -> main.post { showSettings() }
             ACTION_CHECK -> main.post { checkNow() }
-            ACTION_RETENIR, Intent.ACTION_SEND -> if (fresh) addUrlFor(i)?.let { u -> main.post { web.loadUrl(u) } }
+            ACTION_RETENIR, Intent.ACTION_SEND, ACTION_RATEES -> if (fresh) addUrlFor(i)?.let { u -> main.post { web.loadUrl(u) } }
         }
     }
 
@@ -285,6 +338,7 @@ class MainActivity : Activity() {
     }
 
     private var settingsLine: TextView? = null
+    private var alarmLineView: TextView? = null
 
     private fun reminderLine(): String = when {
         !Reminder.isOn(this) -> getString(R.string.set_off)
@@ -316,15 +370,18 @@ class MainActivity : Activity() {
             }
             line.text = reminderLine()
         }
+        val alarm = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f); alpha = 0.7f; text = alarmLine(); setPadding(0, dp(14), 0, 0) }
+        alarmLineView = alarm
+        alarm.setOnClickListener { alarmFixAction()?.let { openAlarmFix(it) } }
         val check = Button(this).apply { text = getString(R.string.check_updates); setOnClickListener { checkNow() } }
         val ver = TextView(this).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f); alpha = 0.55f; gravity = Gravity.START; setPadding(0, dp(12), 0, 0)
             text = getString(R.string.set_version, BuildConfig.VERSION_NAME, Build.VERSION.RELEASE)
         }
-        box.addView(sw); box.addView(line); box.addView(check, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }); box.addView(ver)
+        box.addView(sw); box.addView(line); box.addView(alarm); box.addView(check, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }); box.addView(ver)
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle(R.string.set_title).setView(box).setPositiveButton(R.string.close, null)
-            .setOnDismissListener { settingsLine = null }.show()
+            .setOnDismissListener { settingsLine = null; alarmLineView = null }.show()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -435,6 +492,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         settingsLine?.text = reminderLine()
+        alarmLineView?.text = alarmLine()
         if (pendingInstall && packageManager.canRequestPackageInstalls()) startInstall()
     }
 

@@ -118,7 +118,7 @@ class RescheduleReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED,
-            Intent.ACTION_MY_PACKAGE_REPLACED -> Reminder.schedule(ctx)
+            Intent.ACTION_MY_PACKAGE_REPLACED -> { Reminder.schedule(ctx); Alarm.schedule(ctx) }
         }
     }
 }

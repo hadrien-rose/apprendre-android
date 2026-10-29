@@ -9,7 +9,7 @@
     <string name="sc_retenir">Retenir…</string>
     <string name="sc_retenir_long">Retenir quelque chose</string>
     <string name="sc_settings">Réglages</string>
-    <string name="sc_settings_long">Réglages : le rappel de 8 h</string>
+    <string name="sc_settings_long">Réglages : le rappel de 8 h, l\'alarme</string>
     <string name="sc_update">Mise à jour</string>
     <string name="check_updates">Vérifier les mises à jour</string>
     <string name="set_title">Apprendre</string>
@@ -38,4 +38,19 @@
     <string name="offline_title">Pas de réseau</string>
     <string name="offline_body">Apprendre a besoin du réseau pour afficher ta page.</string>
     <string name="offline_retry">Réessayer</string>
+    <string name="rat_channel_alarm">Cartes ratées : alarme</string>
+    <string name="rat_channel_notif">Cartes ratées : notification</string>
+    <string name="rat_son_on">son</string>
+    <string name="rat_son_off">sans son</string>
+    <string name="rat_vib_on">vibreur</string>
+    <string name="rat_vib_off">sans vibreur</string>
+    <string name="rat_channel_desc">Tes cartes ratées reviennent 10 minutes après ta séance (réglages dans ⚙ de la page)</string>
+    <string name="rat_text">Tes cartes ratées tout à l\'heure</string>
+    <string name="rat_snooze">Dans 5 min</string>
+    <string name="rat_open">Revoir</string>
+    <string name="rat_perm_title">L\'alarme des cartes ratées</string>
+    <string name="rat_perm_body">Pour qu\'elle sonne à l\'heure exacte et en plein écran, Android demande une autorisation (« Alarmes et rappels », ou « Notifications plein écran »). Active-la, puis reviens.</string>
+    <string name="rat_line_ok">Alarme des cartes ratées : prête (heure exacte, plein écran).</string>
+    <string name="rat_line_exact">Alarme des cartes ratées : touche ici pour autoriser « Alarmes et rappels ».</string>
+    <string name="rat_line_full">Alarme des cartes ratées : touche ici pour autoriser le plein écran.</string>
 </resources>

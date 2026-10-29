@@ -190,6 +190,40 @@ object Rules {
         else -> "$due cartes à revoir"
     }
 
+    // ---------- la carte ratée (1.3, 29/10) : l'alarme que la page demande par ApprendreNative.alarm ----------
+
+    /** Les durées de sonnerie que propose ⚙ (secondes) : 3 s · 5 s · 10 s · 1 min · 5 min ; 1 min par défaut. */
+    val ALARM_DUREES = setOf(3, 5, 10, 60, 300)
+    /** Une alarme se pose au plus 2 jours devant (au-delà, la page se trompe) ; une heure passée de plus d'une minute est refusée. */
+    const val ALARM_AHEAD_MAX = 2 * DAY_MS
+    const val SNOOZE_MS = 5 * 60 * 1000L
+
+    data class AlarmSpec(val at: Long, val n: Int, val mode: String, val son: Boolean, val vibreur: Boolean, val duree: Int)
+
+    /**
+     * Ce que la page envoie ({at, n, mode, son, vibreur, duree}) → l'alarme à poser ; null = rien à sonner (at 0, une heure
+     * passée, trop loin, un JSON illisible) : l'alarme posée est alors annulée. Une valeur inconnue prend le défaut (une
+     * vraie alarme, son, vibreur, 1 min) ; le nombre est borné (1 à 999).
+     */
+    fun parseAlarm(json: String?, now: Long): AlarmSpec? {
+        val o = try { org.json.JSONObject(json ?: "") } catch (_: Exception) { return null }
+        val at = o.optLong("at", 0L)
+        if (at <= 0L || at < now - 60_000L || at > now + ALARM_AHEAD_MAX) return null
+        val duree = o.optInt("duree", 60).let { if (it in ALARM_DUREES) it else 60 }
+        return AlarmSpec(at, o.optInt("n", 1).coerceIn(1, 999), if (o.optString("mode") == "notif") "notif" else "alarme",
+            o.optBoolean("son", true), o.optBoolean("vibreur", true), duree)
+    }
+
+    /** Un canal de notification par réglage (Android fige le son et le vibreur d'un canal une fois créé). */
+    fun alarmChannel(mode: String, son: Boolean, vibreur: Boolean): String =
+        "ratees_" + (if (mode == "notif") "notif" else "alarme") + "_" + (if (son) "s" else "0") + (if (vibreur) "v" else "0")
+
+    /** Le titre de l'alarme : le nombre seul, rien d'une carte. */
+    fun alarmText(n: Int): String = if (n > 1) "$n cartes à revoir" else "1 carte à revoir"
+
+    /** Toucher l'alarme = les cartes ratées, directement (#r=rat). */
+    fun ratUrl(start: String): String = start.substringBefore('#') + "#r=rat"
+
     /** Une APK publiée par ce dépôt, en HTTPS, et rien d'autre. */
     fun isReleaseApk(url: String?): Boolean =
         url != null && url.startsWith(RELEASES) && url.endsWith(".apk") && isCleanPath(url.removePrefix("https://github.com"))

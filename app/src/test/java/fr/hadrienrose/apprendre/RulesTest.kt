@@ -181,6 +181,32 @@ class RulesTest {
         assertEquals("ta séance", Rules.remindText(null, "ta séance"))
     }
 
+    @Test fun lAlarmeDesCartesRatees() {
+        val now = utc("2026-10-29T12:00:00")
+        val a = Rules.parseAlarm("{\"at\": ${now + 600_000}, \"n\": 2, \"mode\": \"alarme\", \"son\": true, \"vibreur\": false, \"duree\": 300}", now)
+        assertEquals(Rules.AlarmSpec(now + 600_000, 2, "alarme", true, false, 300), a)
+        val d = Rules.parseAlarm("{\"at\": ${now + 1000}}", now)!!
+        assertEquals("alarme", d.mode); assertTrue(d.son && d.vibreur); assertEquals(60, d.duree); assertEquals(1, d.n)   // les défauts
+        assertEquals("notif", Rules.parseAlarm("{\"at\": ${now + 1000}, \"mode\": \"notif\"}", now)!!.mode)
+        assertEquals("alarme", Rules.parseAlarm("{\"at\": ${now + 1000}, \"mode\": \"sirene\"}", now)!!.mode)
+        assertEquals(60, Rules.parseAlarm("{\"at\": ${now + 1000}, \"duree\": 7}", now)!!.duree)
+        assertEquals(999, Rules.parseAlarm("{\"at\": ${now + 1000}, \"n\": 5000}", now)!!.n)
+        assertNull(Rules.parseAlarm("{\"at\": 0}", now))                                   // rien à sonner : annuler
+        assertNull(Rules.parseAlarm("{\"at\": ${now - 120_000}}", now))                    // passée
+        assertNotNull(Rules.parseAlarm("{\"at\": ${now - 30_000}}", now))                  // à peine passée : sonne
+        assertNull(Rules.parseAlarm("{\"at\": ${now + 3 * Rules.DAY_MS}}", now))           // trop loin
+        assertNull(Rules.parseAlarm("pas du json", now))
+        assertNull(Rules.parseAlarm(null, now))
+        assertEquals("ratees_alarme_sv", Rules.alarmChannel("alarme", true, true))
+        assertEquals("ratees_notif_00", Rules.alarmChannel("notif", false, false))
+        assertEquals("ratees_alarme_0v", Rules.alarmChannel("x", false, true))
+        assertEquals("1 carte à revoir", Rules.alarmText(1))
+        assertEquals("3 cartes à revoir", Rules.alarmText(3))
+        assertEquals("https://chat.hadrien-rose.com/apprendre?app=1#r=rat", Rules.ratUrl("https://chat.hadrien-rose.com/apprendre?app=1#add"))
+        assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/seance/end"))
+        assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/reglages"))
+    }
+
     @Test fun seulesLesApkDeCeDepot() {
         assertTrue(Rules.isReleaseApk("https://github.com/hadrien-rose/apprendre-android/releases/download/v1.0.3/apprendre-1.0.3.apk"))
         assertFalse(Rules.isReleaseApk("https://github.com/hadrien-rose/dictee-android/releases/download/v1.0.3/dictee-1.0.3.apk"))
