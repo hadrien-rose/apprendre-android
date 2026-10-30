@@ -68,6 +68,10 @@
             android:name=".AlarmReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".MatinReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".AlarmActivity"
             android:exported="false"

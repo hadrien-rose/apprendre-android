@@ -95,6 +95,9 @@ object Alarm {
         }
     }
 
+    /** Le canal d'un réglage de sonnerie (le même pour l'alarme des ratées et celle du matin, 1.4 : un seul réglage). */
+    fun channel(ctx: Context, mode: String, son: Boolean, vibreur: Boolean): String = ensureChannel(ctx, Rules.AlarmSpec(0L, 1, mode, son, vibreur, 60))
+
     private fun ensureChannel(ctx: Context, s: Rules.AlarmSpec): String {
         val id = Rules.alarmChannel(s.mode, s.son, s.vibreur)
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return id
@@ -176,13 +179,15 @@ class AlarmReceiver : BroadcastReceiver() {
 
 /**
  * La vraie alarme, plein écran sur l'écran verrouillé (la maquette : « ⏰ 2 cartes à revoir », « Dans 5 min », « Revoir ») ;
- * le son vient de la notification (en boucle) et s'arrête au geste.
+ * le son vient de la notification (en boucle) et s'arrête au geste. 1.4 : la même pour l'alarme du matin (`kind` = matin :
+ * « 3 nouvelles · 10 à revoir », « Dans 5 min », « Jouer » = l'accueil).
  */
 class AlarmActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true) }
         val n = intent.getIntExtra("n", 1)
+        val matin = intent.getStringExtra("kind") == "matin"
         fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setBackgroundColor(Color.parseColor("#101010"))
@@ -194,8 +199,8 @@ class AlarmActivity : Activity() {
             setPadding(0, dp(6), 0, dp(6))
         }
         box.addView(text("⏰", 64f, "#FDFBF0"))
-        box.addView(text(Rules.alarmText(n), 30f, "#FDFBF0", serif = true))
-        box.addView(text(getString(R.string.rat_text), 15f, "#A8A39A"))
+        box.addView(text(if (matin) intent.getStringExtra("title") ?: Rules.MATIN_TEXT else Rules.alarmText(n), 30f, "#FDFBF0", serif = true))
+        box.addView(text(getString(if (matin) R.string.matin_text else R.string.rat_text), 15f, "#A8A39A"))
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(28), 0, 0) }
         fun button(t: String, solid: Boolean, go: () -> Unit) = Button(this).apply {
             text = t; isAllCaps = false; setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -204,10 +209,11 @@ class AlarmActivity : Activity() {
             setOnClickListener { go() }
         }
         val lp = { LinearLayout.LayoutParams(0, dp(56), 1f).apply { setMargins(dp(6), 0, dp(6), 0) } }
-        row.addView(button(getString(R.string.rat_snooze), false) { Alarm.snooze(this); finish() }, lp())
-        row.addView(button(getString(R.string.rat_open), true) {
-            Alarm.stop(this)
-            startActivity(Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_RATEES).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        row.addView(button(getString(R.string.rat_snooze), false) { if (matin) Matin.snooze(this) else Alarm.snooze(this); finish() }, lp())
+        row.addView(button(getString(if (matin) R.string.matin_open else R.string.rat_open), true) {
+            if (matin) Matin.stop(this) else Alarm.stop(this)
+            startActivity(Intent(this, MainActivity::class.java).setAction(if (matin) MainActivity.ACTION_MATIN else MainActivity.ACTION_RATEES)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             finish()
         }, lp())
         box.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -215,5 +221,5 @@ class AlarmActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { Alarm.stop(this); finish() }
+    override fun onBackPressed() { if (intent.getStringExtra("kind") == "matin") Matin.stop(this) else Alarm.stop(this); finish() }
 }

@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Apprendre</string>
-    <string name="channel_name">Rappel du jour</string>
-    <string name="channel_desc">Une notification par jour à 8 h : le nombre de cartes à revoir</string>
-    <string name="remind_title">🧠 Apprendre</string>
-    <string name="remind_text">Tes cartes du jour t\'attendent</string>
     <string name="pick_title">Ajouter un fichier</string>
     <string name="sc_retenir">Retenir…</string>
     <string name="sc_retenir_long">Retenir quelque chose</string>
@@ -13,10 +9,11 @@
     <string name="sc_update">Mise à jour</string>
     <string name="check_updates">Vérifier les mises à jour</string>
     <string name="set_title">Apprendre</string>
-    <string name="set_reminder">Me rappeler chaque jour à 8 h</string>
-    <string name="set_off">Aucun rappel.</string>
+    <string name="set_off">Pas d\'alarme le matin : aucun jour coché (⚙ de la page).</string>
     <string name="set_blocked">Android bloque les notifications d\'Apprendre : touche ici pour les autoriser.</string>
-    <string name="set_next">Prochain rappel : %1$s, 8 h (heure de Paris).</string>
+    <string name="set_next">Alarme du matin : %1$s, %2$s (heure de Paris ; réglages dans ⚙ de la page).</string>
+    <string name="matin_text">Tes cartes du matin : les nouvelles d\'abord</string>
+    <string name="matin_open">Jouer</string>
     <string name="set_version">Apprendre %1$s · Android %2$s</string>
     <string name="close">Fermer</string>
     <string name="later">Plus tard</string>
@@ -44,7 +41,7 @@
     <string name="rat_son_off">sans son</string>
     <string name="rat_vib_on">vibreur</string>
     <string name="rat_vib_off">sans vibreur</string>
-    <string name="rat_channel_desc">Tes cartes ratées reviennent 10 minutes après ta séance (réglages dans ⚙ de la page)</string>
+    <string name="rat_channel_desc">L\'alarme du matin, et tes cartes ratées 10 minutes après ta séance (réglages dans ⚙ de la page)</string>
     <string name="rat_text">Tes cartes ratées tout à l\'heure</string>
     <string name="rat_snooze">Dans 5 min</string>
     <string name="rat_open">Revoir</string>

@@ -2,13 +2,12 @@ package fr.hadrienrose.apprendre
 
 import java.io.File
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
  * Les règles PURES de l'app (testées sans Android, app/src/test) : où la fenêtre peut aller et ce qu'elle peut charger,
- * l'heure du rappel, le fichier confiné d'une photo, ce que demande un champ <input type="file">, les versions.
+ * l'heure de l'alarme du matin, le fichier confiné d'une photo, ce que demande un champ <input type="file">, les versions.
  */
 object Rules {
     /** Le site de Prisme : la fenêtre n'y va que pour la page Apprendre. */
@@ -24,9 +23,8 @@ object Rules {
     /** Les adresses des APK publiées (l'Updater n'en télécharge aucune autre). */
     const val RELEASES = "https://github.com/hadrien-rose/apprendre-android/releases/download/"
 
-    /** Le rappel : chaque jour à 8 h, heure de Paris (où que soit le téléphone). */
+    /** Les heures se comptent à Paris (où que soit le téléphone). */
     val ZONE: ZoneId = ZoneId.of("Europe/Paris")
-    const val REMIND_HOUR = 8
     const val DAY_MS = 24 * 3600 * 1000L
 
     private val PHOTO_RE = Regex("^photo-[0-9]{8}-[0-9]{6}(-[0-9]{1,3})?\\.jpg$")
@@ -122,24 +120,8 @@ object Rules {
         return if (f.canonicalFile.path.startsWith(rootC)) f else null
     }
 
-    // ---------- le rappel de 8 h ----------
-
-    /** L'instant du prochain rappel, STRICTEMENT après `now` : aujourd'hui à 8 h (Paris) s'il est encore à venir, sinon demain. */
-    fun nextReminderAt(now: Long, hour: Int = REMIND_HOUR): Long {
-        val z = Instant.ofEpochMilli(now).atZone(ZONE)
-        var t = z.toLocalDate().atTime(hour, 0).atZone(ZONE)
-        if (t.toInstant().toEpochMilli() <= now) t = z.toLocalDate().plusDays(1).atTime(hour, 0).atZone(ZONE)
-        return t.toInstant().toEpochMilli()
-    }
-
     /** Le jour de Paris d'un instant (« 2026-10-27 »). */
     fun parisDay(now: Long): String = Instant.ofEpochMilli(now).atZone(ZONE).toLocalDate().toString()
-
-    /** L'alarme sonne : une notification par jour au plus, et jamais avant 8 h (heure changée à la main). */
-    fun shouldNotify(lastDay: String?, now: Long, hour: Int = REMIND_HOUR): Boolean {
-        val z = Instant.ofEpochMilli(now).atZone(ZONE)
-        return z.toLocalDate().toString() != lastDay && !z.toLocalTime().isBefore(LocalTime.of(hour, 0))
-    }
 
     // ---------- les versions ----------
 
@@ -153,7 +135,7 @@ object Rules {
     fun shouldPrompt(latestCode: Int, installedCode: Int, promptedCode: Int, promptedAt: Long, now: Long): Boolean =
         isNewer(latestCode, installedCode) && (promptedCode != latestCode || now - promptedAt >= DAY_MS)
 
-    // ---------- « tout est carte » (27/10) : retenir d'ailleurs, le rappel avec le nombre ----------
+    // ---------- « tout est carte » (27/10) : retenir d'ailleurs ----------
 
     const val SHARE_MAX = 2000
 
@@ -171,23 +153,6 @@ object Rules {
     fun sharedText(subject: String?, text: String?): String {
         val s = (subject ?: "").trim(); val t = (text ?: "").trim()
         return if (s.isNotEmpty() && t.isNotEmpty() && !t.contains(s)) "$s — $t" else t.ifEmpty { s }
-    }
-
-    /** Le nombre de cartes à revoir lu dans la réponse de /api/apprendre/review/count ({"due": n}), ou null. */
-    fun parseDue(body: String?): Int? {
-        val m = Regex("^\\s*\\{\\s*\"due\"\\s*:\\s*(\\d{1,6})\\s*}\\s*$").find(body ?: "") ?: return null
-        return m.groupValues[1].toInt()
-    }
-
-    /**
-     * Le texte du rappel : le nombre de cartes à revoir (rien d'un dossier), ou le texte d'avant quand Prisme n'a pas répondu
-     * (hors ligne, login expiré). Zéro carte : pas de rappel (null).
-     */
-    fun remindText(due: Int?, fallback: String): String? = when {
-        due == null -> fallback
-        due <= 0 -> null
-        due == 1 -> "1 carte à revoir"
-        else -> "$due cartes à revoir"
     }
 
     // ---------- la carte ratée (1.3, 29/10) : l'alarme que la page demande par ApprendreNative.alarm ----------
@@ -223,6 +188,56 @@ object Rules {
 
     /** Toucher l'alarme = les cartes ratées, directement (#r=rat). */
     fun ratUrl(start: String): String = start.substringBefore('#') + "#r=rat"
+
+    // ---------- l'alarme du matin (1.4, chantier 4 du 30/10, maquette apprendre-cartes-du-jour) ----------
+
+    /** Ce que la page envoie par ApprendreNative.matin : l'heure, les jours cochés (0 = lundi), le début de la journée, la sonnerie. */
+    data class MatinSpec(val heure: String, val jours: Set<Int>, val debut: String, val mode: String, val son: Boolean, val vibreur: Boolean,
+                         val duree: Int)
+
+    /** Les réglages par défaut, avant que la page ait parlé (son choix : 8 h 50, du lundi au vendredi, une vraie alarme). */
+    val MATIN_DEFAULT = MatinSpec("08:50", setOf(0, 1, 2, 3, 4), "06:00", "alarme", true, true, 60)
+    private val HHMM = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$")
+
+    /** Le JSON de la page → les réglages ; null si l'heure ou les jours sont faux (rien n'est changé). Aucun jour = pas d'alarme. */
+    fun parseMatin(json: String?): MatinSpec? {
+        val o = try { org.json.JSONObject(json ?: "") } catch (_: Exception) { return null }
+        val heure = o.optString("heure"); val debut = o.optString("debut", "06:00")
+        if (!HHMM.matches(heure) || !HHMM.matches(debut)) return null
+        val a = o.optJSONArray("jours") ?: return null
+        val jours = mutableSetOf<Int>()
+        for (i in 0 until a.length()) { val d = a.optInt(i, -1); if (d !in 0..6) return null; jours.add(d) }
+        val duree = o.optInt("duree", 60).let { if (it in ALARM_DUREES) it else 60 }
+        return MatinSpec(heure, jours, debut, if (o.optString("mode") == "notif") "notif" else "alarme", o.optBoolean("son", true),
+            o.optBoolean("vibreur", true), duree)
+    }
+
+    /** Le prochain matin coché, STRICTEMENT après `now`, à l'heure dite (Paris) ; -1 si aucun jour n'est coché. */
+    fun nextMatinAt(now: Long, heure: String, jours: Set<Int>): Long {
+        if (jours.isEmpty() || !HHMM.matches(heure)) return -1L
+        val (h, m) = heure.split(":").map { it.toInt() }
+        val z = Instant.ofEpochMilli(now).atZone(ZONE)
+        for (k in 0..7) {
+            val d = z.toLocalDate().plusDays(k.toLong())
+            if ((d.dayOfWeek.value - 1) !in jours) continue
+            val t = d.atTime(h, m).atZone(ZONE).toInstant().toEpochMilli()
+            if (t > now) return t
+        }
+        return -1L
+    }
+
+    /**
+     * La réponse de /api/apprendre/matin → (sonner, texte) ; null si illisible. Prisme muet ou illisible : l'alarme SONNE quand
+     * même (mieux vaut une alarme de trop qu'une révision manquée), avec un texte sans nombre.
+     */
+    fun parseMatinAnswer(body: String?): Pair<Boolean, String>? {
+        val o = try { org.json.JSONObject(body ?: "") } catch (_: Exception) { return null }
+        if (!o.has("sonner")) return null
+        val t = o.optString("texte").trim().take(80).ifEmpty { MATIN_TEXT }
+        return Pair(o.optBoolean("sonner", true), t)
+    }
+
+    const val MATIN_TEXT = "Tes cartes du matin"
 
     /** Une APK publiée par ce dépôt, en HTTPS, et rien d'autre. */
     fun isReleaseApk(url: String?): Boolean =

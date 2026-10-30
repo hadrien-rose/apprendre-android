@@ -116,30 +116,6 @@ class RulesTest {
         root.deleteRecursively()
     }
 
-    @Test fun rappelAHuitHeuresDeParis() {
-        // avant 8 h : aujourd'hui ; à 8 h pile ou après : demain
-        assertEquals(paris("2026-10-27T08:00+01:00"), Rules.nextReminderAt(paris("2026-10-27T07:59:59+01:00")))
-        assertEquals(paris("2026-10-28T08:00+01:00"), Rules.nextReminderAt(paris("2026-10-27T08:00+01:00")))
-        assertEquals(paris("2026-10-28T08:00+01:00"), Rules.nextReminderAt(paris("2026-10-27T21:30+01:00")))
-        // heure d'hiver (CET, UTC+1) et d'été (CEST, UTC+2), en UTC
-        assertEquals(utc("2026-10-27T07:00"), Rules.nextReminderAt(utc("2026-10-26T23:30")))
-        assertEquals(utc("2026-07-14T06:00"), Rules.nextReminderAt(utc("2026-07-13T12:00")))
-        // les nuits du changement d'heure : 8 h reste 8 h
-        assertEquals(utc("2026-10-25T07:00"), Rules.nextReminderAt(utc("2026-10-24T20:00")))   // passage à l'heure d'hiver
-        assertEquals(utc("2026-03-29T06:00"), Rules.nextReminderAt(utc("2026-03-28T20:00")))   // passage à l'heure d'été
-        // minuit UTC = déjà le lendemain à Paris
-        assertEquals("2026-10-27", Rules.parisDay(utc("2026-10-26T23:30")))
-    }
-
-    @Test fun uneNotificationParJourJamaisAvantHuitHeures() {
-        val t = paris("2026-10-27T08:00:30+01:00")
-        assertTrue(Rules.shouldNotify(null, t))
-        assertTrue(Rules.shouldNotify("2026-10-26", t))
-        assertFalse(Rules.shouldNotify("2026-10-27", t))                                   // déjà fait aujourd'hui
-        assertFalse(Rules.shouldNotify(null, paris("2026-10-27T07:59+01:00")))              // heure changée à la main
-        assertTrue(Rules.shouldNotify("2026-10-26", paris("2026-10-27T11:40+01:00")))      // alarme retardée par la veille
-    }
-
     @Test fun versionPlusRecente() {
         assertTrue(Rules.isNewer(102, 101))
         assertFalse(Rules.isNewer(101, 101))
@@ -169,18 +145,6 @@ class RulesTest {
         assertEquals("Le titre", Rules.sharedText("Le titre", null))
     }
 
-    @Test fun leRappelDitLeNombre() {
-        assertEquals(7, Rules.parseDue("{\"due\": 7}"))
-        assertEquals(0, Rules.parseDue(" {\"due\":0} "))
-        assertNull(Rules.parseDue("<html>Cloudflare Access</html>"))      // login expiré : la page d'Access
-        assertNull(Rules.parseDue("{\"due\": 7, \"themes\": []}"))      // autre chose qu'un nombre : refusé
-        assertNull(Rules.parseDue(null))
-        assertEquals("1 carte à revoir", Rules.remindText(1, "x"))
-        assertEquals("7 cartes à revoir", Rules.remindText(7, "x"))
-        assertNull(Rules.remindText(0, "x"))
-        assertEquals("ta séance", Rules.remindText(null, "ta séance"))
-    }
-
     @Test fun lAlarmeDesCartesRatees() {
         val now = utc("2026-10-29T12:00:00")
         val a = Rules.parseAlarm("{\"at\": ${now + 600_000}, \"n\": 2, \"mode\": \"alarme\", \"son\": true, \"vibreur\": false, \"duree\": 300}", now)
@@ -205,6 +169,35 @@ class RulesTest {
         assertEquals("https://chat.hadrien-rose.com/apprendre?app=1#r=rat", Rules.ratUrl("https://chat.hadrien-rose.com/apprendre?app=1#add"))
         assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/seance/end"))
         assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/reglages"))
+    }
+
+    @Test fun lAlarmeDuMatin() {
+        val m = Rules.parseMatin("{\"heure\": \"08:50\", \"jours\": [0,1,2,3,4], \"debut\": \"06:00\", \"mode\": \"alarme\", \"son\": false, \"vibreur\": true, \"duree\": 300}")
+        assertEquals(Rules.MatinSpec("08:50", setOf(0, 1, 2, 3, 4), "06:00", "alarme", false, true, 300), m)
+        assertEquals(emptySet<Int>(), Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": []}")!!.jours)      // aucun jour : pas d'alarme
+        assertEquals("notif", Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": [6], \"mode\": \"notif\"}")!!.mode)
+        assertEquals(60, Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": [6], \"duree\": 42}")!!.duree)
+        assertNull(Rules.parseMatin("{\"heure\": \"25:00\", \"jours\": [0]}"))
+        assertNull(Rules.parseMatin("{\"heure\": \"8:50\", \"jours\": [0]}"))
+        assertNull(Rules.parseMatin("{\"heure\": \"08:50\", \"jours\": [7]}"))
+        assertNull(Rules.parseMatin("{\"heure\": \"08:50\"}"))
+        assertNull(Rules.parseMatin("pas du json"))
+        assertNull(Rules.parseMatin(null))
+        val lv = setOf(0, 1, 2, 3, 4)
+        // vendredi 30/10/2026 à 7 h : ce matin à 8 h 50 ; à 9 h : lundi (samedi et dimanche décochés)
+        assertEquals(paris("2026-10-30T08:50:00+01:00"), Rules.nextMatinAt(paris("2026-10-30T07:00:00+01:00"), "08:50", lv))
+        assertEquals(paris("2026-11-02T08:50:00+01:00"), Rules.nextMatinAt(paris("2026-10-30T09:00:00+01:00"), "08:50", lv))
+        assertEquals(paris("2026-11-02T08:50:00+01:00"), Rules.nextMatinAt(paris("2026-10-30T08:50:00+01:00"), "08:50", lv))   // strictement après
+        assertEquals(paris("2026-10-31T07:15:00+01:00"), Rules.nextMatinAt(paris("2026-10-30T09:00:00+01:00"), "07:15", setOf(5)))
+        // l'heure d'été : samedi 28/03/2027, dimanche coché, 8 h 50 de Paris = 6 h 50 UTC
+        assertEquals(utc("2027-03-28T06:50:00"), Rules.nextMatinAt(utc("2027-03-27T12:00:00"), "08:50", setOf(6)))
+        assertEquals(-1L, Rules.nextMatinAt(paris("2026-10-30T09:00:00+01:00"), "08:50", emptySet()))
+        assertEquals(Pair(true, "3 nouvelles · 10 à revoir"), Rules.parseMatinAnswer("{\"sonner\": true, \"nouvelles\": 3, \"texte\": \"3 nouvelles · 10 à revoir\"}"))
+        assertEquals(Pair(false, Rules.MATIN_TEXT), Rules.parseMatinAnswer("{\"sonner\": false, \"texte\": \"\"}"))
+        assertNull(Rules.parseMatinAnswer("<html>login</html>"))       // Prisme muet ou le login : l'alarme sonne quand même
+        assertNull(Rules.parseMatinAnswer("{\"due\": 3}"))
+        assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/matin"))
+        assertEquals(Rules.MatinSpec("08:50", setOf(0, 1, 2, 3, 4), "06:00", "alarme", true, true, 60), Rules.MATIN_DEFAULT)
     }
 
     @Test fun seulesLesApkDeCeDepot() {

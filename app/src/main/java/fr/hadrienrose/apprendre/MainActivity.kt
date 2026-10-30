@@ -35,7 +35,6 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -60,6 +59,7 @@ class MainActivity : Activity() {
         const val ACTION_CHECK = "fr.hadrienrose.apprendre.CHECK_UPDATE"
         const val ACTION_RETENIR = "fr.hadrienrose.apprendre.RETENIR"
         const val ACTION_RATEES = "fr.hadrienrose.apprendre.RATEES_OPEN"
+        const val ACTION_MATIN = "fr.hadrienrose.apprendre.MATIN_OPEN"
         const val REQ_FILES = 21
         const val REQ_NOTIF = 22
         private const val FIELD_FOCUSED_JS = "(function(){var t=document.activeElement;return t&&(t.tagName==='TEXTAREA'||t.tagName==='INPUT')&&t.offsetParent?1:0})()"
@@ -84,8 +84,8 @@ class MainActivity : Activity() {
         setContentView(root)
         fitBars(root)
         setupWeb()
-        Reminder.ensureChannel(this)
-        Reminder.schedule(this)
+        Reminder.cancel(this)            // 1.4 : le rappel de 8 h est remplacé par l'alarme du matin
+        Matin.schedule(this)
         PhotoProvider.purge(this)
         askNotificationsOnce()
         web.loadUrl(addUrlFor(intent) ?: START_URL)
@@ -167,7 +167,8 @@ class MainActivity : Activity() {
 
     /**
      * Le pont de la page (1.3) : `alarm(json)` = l'heure, le nombre et les réglages de l'alarme des cartes ratées ({at: 0} =
-     * rien à sonner). Seule la page de Prisme est écoutée ; tout est revérifié (Rules.parseAlarm) ; rien ne revient à la page.
+     * rien à sonner). 1.4 : `matin(json)` = l'heure, les jours cochés et la sonnerie de l'alarme du matin. Seule la page de Prisme
+     * est écoutée ; tout est revérifié (Rules.parseAlarm, Rules.parseMatin) ; rien ne revient à la page.
      */
     inner class NativeBridge {
         @JavascriptInterface
@@ -176,6 +177,14 @@ class MainActivity : Activity() {
             val s = Rules.parseAlarm(json, System.currentTimeMillis())
             Alarm.set(applicationContext, s)
             if (s != null) main.post { askAlarmOnce() }
+        }
+
+        @JavascriptInterface
+        fun matin(json: String?) {
+            if (!Rules.isSiteHost(pageHost)) return
+            val s = Rules.parseMatin(json) ?: return
+            Matin.set(applicationContext, json!!)
+            if (s.jours.isNotEmpty()) main.post { askAlarmOnce(); settingsLine?.text = reminderLine() }
         }
     }
 
@@ -305,6 +314,7 @@ class MainActivity : Activity() {
     private fun addUrlFor(i: Intent?): String? = when (i?.action) {
         ACTION_RETENIR -> Rules.addUrl(START_URL, null)
         ACTION_RATEES -> { Alarm.stop(this); Rules.ratUrl(START_URL) }
+        ACTION_MATIN -> { Matin.stop(this); START_URL }
         Intent.ACTION_SEND -> Rules.addUrl(START_URL, Rules.sharedText(i.getStringExtra(Intent.EXTRA_SUBJECT),
             i.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()))
         else -> null
@@ -314,7 +324,7 @@ class MainActivity : Activity() {
         when (i?.action) {
             ACTION_SETTINGS -> main.post { showSettings() }
             ACTION_CHECK -> main.post { checkNow() }
-            ACTION_RETENIR, Intent.ACTION_SEND, ACTION_RATEES -> if (fresh) addUrlFor(i)?.let { u -> main.post { web.loadUrl(u) } }
+            ACTION_RETENIR, Intent.ACTION_SEND, ACTION_RATEES, ACTION_MATIN -> if (fresh) addUrlFor(i)?.let { u -> main.post { web.loadUrl(u) } }
         }
     }
 
@@ -340,35 +350,28 @@ class MainActivity : Activity() {
     private var settingsLine: TextView? = null
     private var alarmLineView: TextView? = null
 
-    private fun reminderLine(): String = when {
-        !Reminder.isOn(this) -> getString(R.string.set_off)
-        !notifAllowed() -> getString(R.string.set_blocked)
-        else -> {
-            val at = Rules.nextReminderAt(System.currentTimeMillis())
-            getString(R.string.set_next, DateFormat.format("EEEE d MMMM", Date(at)).toString())
+    /** L'alarme du matin (1.4) : la prochaine, ou pourquoi elle ne sonnera pas ; ses réglages vivent dans ⚙ de la page. */
+    private fun reminderLine(): String {
+        val at = Matin.next(this)
+        return when {
+            at <= 0L -> getString(R.string.set_off)
+            !notifAllowed() -> getString(R.string.set_blocked)
+            else -> getString(R.string.set_next, DateFormat.format("EEEE d MMMM", Date(at)).toString(), Matin.load(this).heure.replace(":", " h "))
         }
     }
 
-    /** Réglages : le rappel oui / non (8 h, heure de Paris), « Vérifier les mises à jour », la version. */
+    /** Réglages : l'alarme du matin (réglée dans ⚙ de la page), celle des ratées, « Vérifier les mises à jour », la version. */
     private fun showSettings() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), dp(4)) }
-        val sw = Switch(this).apply {
-            text = getString(R.string.set_reminder); isChecked = Reminder.isOn(this@MainActivity)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f); setPadding(0, dp(8), 0, dp(8))
-        }
-        val line = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f); alpha = 0.7f; text = reminderLine() }
+        val line = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); alpha = 0.85f; text = reminderLine(); setPadding(0, dp(8), 0, 0) }
         settingsLine = line
-        line.setOnClickListener { if (Reminder.isOn(this) && !notifAllowed()) openNotifSettings() }
-        sw.setOnCheckedChangeListener { _, on ->
-            Reminder.setOn(this, on)
-            if (on && !notifAllowed()) {
-                if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) ||
-                    !getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_NOTIF_ASKED, false)) {
-                    getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean(KEY_NOTIF_ASKED, true).apply()
-                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
-                } else openNotifSettings()        // refusée pour de bon : seul le réglage d'Android la rend
-            }
-            line.text = reminderLine()
+        line.setOnClickListener {
+            if (notifAllowed()) return@setOnClickListener
+            if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) ||
+                !getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_NOTIF_ASKED, false)) {
+                getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean(KEY_NOTIF_ASKED, true).apply()
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
+            } else openNotifSettings()        // refusée pour de bon : seul le réglage d'Android la rend
         }
         val alarm = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f); alpha = 0.7f; text = alarmLine(); setPadding(0, dp(14), 0, 0) }
         alarmLineView = alarm
@@ -378,7 +381,7 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f); alpha = 0.55f; gravity = Gravity.START; setPadding(0, dp(12), 0, 0)
             text = getString(R.string.set_version, BuildConfig.VERSION_NAME, Build.VERSION.RELEASE)
         }
-        box.addView(sw); box.addView(line); box.addView(alarm); box.addView(check, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }); box.addView(ver)
+        box.addView(line); box.addView(alarm); box.addView(check, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }); box.addView(ver)
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle(R.string.set_title).setView(box).setPositiveButton(R.string.close, null)
             .setOnDismissListener { settingsLine = null; alarmLineView = null }.show()
