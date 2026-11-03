@@ -49,7 +49,8 @@ import java.util.Date
  * nombre de cartes à revoir), « Retenir… » et « Partager → Apprendre » qui ouvrent « ＋ Ajouter ».
  * La fenêtre ne va que sur la page Apprendre et le login Cloudflare (code par e-mail) ; la page ne charge que son API et
  * ses polices (Rules) ; tout autre lien s'ouvre dans le navigateur. UN pont JS (1.3, 29/10) : `ApprendreNative.alarm(json)`,
- * par lequel la page pose l'alarme des cartes ratées (Alarm) ; il n'écoute que la page de Prisme et ne rend rien.
+ * par lequel la page pose l'alarme des cartes ratées (Alarm), `matin(json)` (1.4) et `update()` (1.6, le bouton « Mettre à jour »
+ * en bas de ⚙) ; il n'écoute que la page de Prisme et ne rend rien.
  * Le menu de l'app = l'appui long sur son icône (« Retenir… », « Réglages », « Vérifier les mises à jour »).
  */
 class MainActivity : Activity() {
@@ -163,6 +164,8 @@ class MainActivity : Activity() {
         }
         web.setDownloadListener { url, _, _, _, _ -> openOutside(Uri.parse(url)) }
         web.addJavascriptInterface(NativeBridge(), "ApprendreNative")
+        // 1.6 : toucher la page pendant qu'une alarme sonne la fait taire (l'app était déjà ouverte : « Revoir » dans la page)
+        web.setOnTouchListener { _, ev -> if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) Buzz.hushIfRinging(this); false }
     }
 
     /**
@@ -177,6 +180,13 @@ class MainActivity : Activity() {
             val s = Rules.parseAlarm(json, System.currentTimeMillis())
             Alarm.set(applicationContext, s)
             if (s != null) main.post { askAlarmOnce() }
+        }
+
+        /** 1.6 : « ⬇ Mettre à jour » en bas de ⚙ (demande d'Hadrien du 03/11) = « Vérifier les mises à jour » du menu. */
+        @JavascriptInterface
+        fun update() {
+            if (!Rules.isSiteHost(pageHost)) return
+            main.post { if (!isFinishing) checkNow() }
         }
 
         @JavascriptInterface
@@ -494,6 +504,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        Buzz.hushIfRinging(this)          // 1.6 : ouvrir l'app pendant qu'une alarme sonne la fait taire
         settingsLine?.text = reminderLine()
         alarmLineView?.text = alarmLine()
         if (pendingInstall && packageManager.canRequestPackageInstalls()) startInstall()

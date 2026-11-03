@@ -186,14 +186,18 @@ object Alarm {
  * Retour, la notification écartée) l'arrête avant.
  */
 object Buzz {
-    private fun vibrator(ctx: Context): Vibrator? =
-        if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
-        else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
+    // 1.6 (03/11, « quand je clique sur Revoir, le vibreur ne s'arrête pas ») : Android n'arrête une vibration que si l'arrêt vient
+    // du MÊME vibreur (le jeton de son VibratorManager, un par Context) ; elle partait du récepteur (contexte de l'application) et
+    // « Revoir » l'arrêtait depuis l'écran d'alarme ou l'app (leur propre contexte) : sans effet. Tout passe désormais par le
+    // contexte de l'application ; et si l'app a été relancée entre-temps (nouveau jeton), une vibration d'1 ms, imperceptible, en
+    // usage ALARME, remplace celle qui dure (Android coupe une vibration finie pour la nouvelle).
+    private fun vibrator(ctx: Context): Vibrator? {
+        val app = ctx.applicationContext ?: ctx
+        return if (Build.VERSION.SDK_INT >= 31) app.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") app.getSystemService(Vibrator::class.java)
+    }
 
-    fun start(ctx: Context, secs: Int) {
-        val v = vibrator(ctx) ?: return
-        if (!v.hasVibrator()) return
-        val effect = VibrationEffect.createWaveform(Rules.buzzPattern(secs), -1)
+    private fun vibrateAlarm(v: Vibrator, effect: VibrationEffect) {
         try {
             if (Build.VERSION.SDK_INT >= 33) v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
             else @Suppress("DEPRECATION") v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
@@ -201,7 +205,31 @@ object Buzz {
         } catch (_: SecurityException) { }
     }
 
-    fun stop(ctx: Context) { try { vibrator(ctx)?.cancel() } catch (_: SecurityException) { } }
+    fun start(ctx: Context, secs: Int) {
+        val v = vibrator(ctx) ?: return
+        if (!v.hasVibrator()) return
+        vibrateAlarm(v, VibrationEffect.createWaveform(Rules.buzzPattern(secs), -1))
+    }
+
+    fun stop(ctx: Context) {
+        val v = vibrator(ctx) ?: return
+        try { v.cancel() } catch (_: SecurityException) { }
+        if (v.hasVibrator()) {
+            vibrateAlarm(v, VibrationEffect.createOneShot(1, 1))
+            try { v.cancel() } catch (_: SecurityException) { }
+        }
+    }
+
+    /** Une alarme sonne encore (sa notification est là). */
+    fun ringing(ctx: Context): Boolean = try {
+        Rules.ringing(ctx.getSystemService(NotificationManager::class.java)?.activeNotifications?.map { it.id }?.toIntArray() ?: IntArray(0))
+    } catch (_: Exception) { false }
+
+    /** Ouvrir l'app ou la toucher pendant qu'une alarme sonne = un geste : elle se tait (1.6). */
+    fun hushIfRinging(ctx: Context) {
+        if (!ringing(ctx)) return
+        Alarm.stop(ctx); Matin.stop(ctx)
+    }
 
     fun hushPending(ctx: Context): PendingIntent =
         PendingIntent.getBroadcast(ctx, 14, Intent(ctx, AlarmReceiver::class.java).setAction(Alarm.ACTION_HUSH),

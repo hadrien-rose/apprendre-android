@@ -192,6 +192,12 @@ object Rules {
      *  s'arrête d'elle-même (jamais une vibration sans fin si l'app est tuée). Au moins une vibration. */
     const val BUZZ_ON = 900L
     const val BUZZ_OFF = 500L
+
+    /** Les notifications des deux alarmes (Alarm.NOTIF_ID, Matin.NOTIF_ID). */
+    val ALARM_NOTIFS = intArrayOf(10, 11)
+
+    /** Une alarme sonne-t-elle encore (sa notification est là) ? Ouvrir l'app ou la toucher la fait alors taire (1.6). */
+    fun ringing(activeIds: IntArray): Boolean = activeIds.any { it in ALARM_NOTIFS }
     fun buzzPattern(secs: Int): LongArray {
         val n = maxOf(1, ((secs.coerceIn(1, 300) * 1000L) / (BUZZ_ON + BUZZ_OFF)).toInt())
         return LongArray(1 + 2 * n) { i -> if (i == 0) 0L else if (i % 2 == 1) BUZZ_ON else BUZZ_OFF }

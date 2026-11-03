@@ -25,6 +25,8 @@ dans les secrets GitHub). L'app n'ouvre rien sans le login de son propriétaire.
   (« 3 nouvelles · 10 à revoir », rien d'une carte) ; Prisme muet = elle sonne quand même. Elle remplace le rappel de
   8 h des versions 1.0 à 1.3 (`Reminder` ne fait plus que l'annuler).
 - **Le vibreur** (`Buzz`, 1.5) : une vraie alarme vibre par l'app elle-même, en usage ALARME (comme le réveil : passe le silencieux et « Ne pas déranger » si les alarmes y sont permises), 0,9 s / 0,5 s pendant toute la durée de ⚙, arrêtée par un geste ; avant, seul le canal de la notification vibrait (3 × 0,6 s, une fois, et pas d'usage alarme son coupé).
+- **Le vibreur s'arrête vraiment** (1.6) : Android n'arrête une vibration que depuis le MÊME vibreur (un jeton par Context) ; « Revoir » l'arrêtait depuis l'écran d'alarme ou l'app, sans effet. Tout passe par le contexte de l'application, et une vibration d'1 ms en usage alarme remplace celle qui dure si l'app a été relancée entre-temps. Ouvrir l'app ou toucher la page pendant qu'une alarme sonne la fait aussi taire.
+- **« ⬇ Mettre à jour »** (1.6) : en bas de ⚙ de la page, `ApprendreNative.update()` = « Vérifier les mises à jour » du menu ; une app plus ancienne ouvre la dernière version publiée dans le navigateur.
 - **L'alarme des cartes ratées** (`Alarm`, 1.3) : 10 minutes après la fin de la séance. Les deux alarmes partagent la
   même sonnerie (⚙ : alarme plein écran ou notification, son, vibreur, durée) ; reposées au redémarrage, au changement
   d'heure et après une mise à jour. Android 13 et plus : l'autorisation des notifications est demandée une fois.

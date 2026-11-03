@@ -214,6 +214,13 @@ class RulesTest {
         assertTrue(Rules.buzzPattern(60).sum() in 58_000L..60_000L)
     }
 
+    @Test fun uneAlarmeQuiSonneEncore() {                     // 1.6 : ouvrir ou toucher l'app la fait taire
+        assertTrue(Rules.ringing(intArrayOf(3, 10)))
+        assertTrue(Rules.ringing(intArrayOf(11)))
+        assertFalse(Rules.ringing(intArrayOf(1, 2, 12)))
+        assertFalse(Rules.ringing(IntArray(0)))
+    }
+
     @Test fun seulesLesApkDeCeDepot() {
         assertTrue(Rules.isReleaseApk("https://github.com/hadrien-rose/apprendre-android/releases/download/v1.0.3/apprendre-1.0.3.apk"))
         assertFalse(Rules.isReleaseApk("https://github.com/hadrien-rose/dictee-android/releases/download/v1.0.3/dictee-1.0.3.apk"))
