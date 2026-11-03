@@ -161,9 +161,11 @@ class RulesTest {
         assertNull(Rules.parseAlarm("{\"at\": ${now + 3 * Rules.DAY_MS}}", now))           // trop loin
         assertNull(Rules.parseAlarm("pas du json", now))
         assertNull(Rules.parseAlarm(null, now))
-        assertEquals("ratees_alarme_sv", Rules.alarmChannel("alarme", true, true))
+        assertEquals("ratees2_alarme_s", Rules.alarmChannel("alarme", true, true))     // 1.5 : l'app vibre elle-même, le canal plus
+        assertEquals("ratees2_alarme_s", Rules.alarmChannel("alarme", true, false))
         assertEquals("ratees_notif_00", Rules.alarmChannel("notif", false, false))
-        assertEquals("ratees_alarme_0v", Rules.alarmChannel("x", false, true))
+        assertEquals("ratees_notif_sv", Rules.alarmChannel("notif", true, true))
+        assertEquals("ratees2_alarme_0", Rules.alarmChannel("x", false, true))
         assertEquals("1 carte à revoir", Rules.alarmText(1))
         assertEquals("3 cartes à revoir", Rules.alarmText(3))
         assertEquals("https://chat.hadrien-rose.com/apprendre?app=1#r=rat", Rules.ratUrl("https://chat.hadrien-rose.com/apprendre?app=1#add"))
@@ -198,6 +200,18 @@ class RulesTest {
         assertNull(Rules.parseMatinAnswer("{\"due\": 3}"))
         assertTrue(Rules.canLoad("chat.hadrien-rose.com", "https", "chat.hadrien-rose.com", "/api/apprendre/matin"))
         assertEquals(Rules.MatinSpec("08:50", setOf(0, 1, 2, 3, 4), "06:00", "alarme", true, true, 60), Rules.MATIN_DEFAULT)
+    }
+
+    @Test fun laVibrationDUneVraieAlarme() {
+        val p5 = Rules.buzzPattern(300)                      // 5 min : 0,9 s / 0,5 s pendant toute la durée, puis fini
+        assertEquals(0L, p5[0]); assertEquals(Rules.BUZZ_ON, p5[1]); assertEquals(Rules.BUZZ_OFF, p5[2])
+        val total = p5.sum()
+        assertTrue(total in 299_000L..300_000L)
+        assertEquals(1 + 2 * 214, p5.size)
+        assertEquals(Rules.buzzPattern(300).size, Rules.buzzPattern(9999).size)   // jamais plus de 5 min
+        assertEquals(3, Rules.buzzPattern(1).size)              // 1 s : au moins une vibration
+        assertEquals(3, Rules.buzzPattern(0).size)
+        assertTrue(Rules.buzzPattern(60).sum() in 58_000L..60_000L)
     }
 
     @Test fun seulesLesApkDeCeDepot() {

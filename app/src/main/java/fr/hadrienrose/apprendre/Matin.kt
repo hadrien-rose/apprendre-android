@@ -101,14 +101,16 @@ object Matin {
             val full = PendingIntent.getActivity(ctx, 23, Intent(ctx, AlarmActivity::class.java).putExtra("kind", "matin").putExtra("title", texte)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            b.setFullScreenIntent(full, true).setTimeoutAfter(s.duree * 1000L)
+            b.setFullScreenIntent(full, true).setTimeoutAfter(s.duree * 1000L).setDeleteIntent(Buzz.hushPending(ctx))
         }
         val n = b.build()
         if (alarm) n.flags = n.flags or Notification.FLAG_INSISTENT
         try { ctx.getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, n) } catch (_: SecurityException) { }
+        if (alarm && s.vibreur) Buzz.start(ctx, s.duree)       // 1.5 : l'app vibre elle-même, toute la durée (Alarm.kt, Buzz)
     }
 
     fun stop(ctx: Context) {
+        Buzz.stop(ctx)
         ctx.getSystemService(NotificationManager::class.java)?.cancel(NOTIF_ID)
     }
 

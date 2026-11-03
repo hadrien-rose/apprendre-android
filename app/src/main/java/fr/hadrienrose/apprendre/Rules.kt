@@ -179,9 +179,23 @@ object Rules {
             o.optBoolean("son", true), o.optBoolean("vibreur", true), duree)
     }
 
-    /** Un canal de notification par réglage (Android fige le son et le vibreur d'un canal une fois créé). */
+    /**
+     * Un canal de notification par réglage (Android fige le son et le vibreur d'un canal une fois créé). 1.5 : une VRAIE alarme ne
+     * vibre plus par son canal (trois secousses de 0,6 s, une fois, et muettes si le son est coupé) mais par l'app elle-même
+     * (`Buzz`, usage ALARME, toute la durée) : ses canaux changent de nom (« ratees2_ »), le vibreur n'y compte plus.
+     */
     fun alarmChannel(mode: String, son: Boolean, vibreur: Boolean): String =
-        "ratees_" + (if (mode == "notif") "notif" else "alarme") + "_" + (if (son) "s" else "0") + (if (vibreur) "v" else "0")
+        if (mode == "notif") "ratees_notif_" + (if (son) "s" else "0") + (if (vibreur) "v" else "0")
+        else "ratees2_alarme_" + (if (son) "s" else "0")
+
+    /** La vibration d'une vraie alarme (1.5) : 0,9 s de vibration, 0,5 s de pause, répétées pendant `secs` secondes, puis elle
+     *  s'arrête d'elle-même (jamais une vibration sans fin si l'app est tuée). Au moins une vibration. */
+    const val BUZZ_ON = 900L
+    const val BUZZ_OFF = 500L
+    fun buzzPattern(secs: Int): LongArray {
+        val n = maxOf(1, ((secs.coerceIn(1, 300) * 1000L) / (BUZZ_ON + BUZZ_OFF)).toInt())
+        return LongArray(1 + 2 * n) { i -> if (i == 0) 0L else if (i % 2 == 1) BUZZ_ON else BUZZ_OFF }
+    }
 
     /** Le titre de l'alarme : le nombre seul, rien d'une carte. */
     fun alarmText(n: Int): String = if (n > 1) "$n cartes à revoir" else "1 carte à revoir"

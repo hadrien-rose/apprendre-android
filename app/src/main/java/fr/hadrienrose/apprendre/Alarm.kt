@@ -15,6 +15,10 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationAttributes
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
@@ -41,6 +45,7 @@ object Alarm {
     private const val K_DUREE = "rat_duree"
     const val ACTION_FIRE = "fr.hadrienrose.apprendre.RATEES"
     const val ACTION_SNOOZE = "fr.hadrienrose.apprendre.RATEES_SNOOZE"
+    const val ACTION_HUSH = "fr.hadrienrose.apprendre.HUSH"
     const val NOTIF_ID = 10
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -102,9 +107,10 @@ object Alarm {
         val id = Rules.alarmChannel(s.mode, s.son, s.vibreur)
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return id
         if (nm.getNotificationChannel(id) != null) return id
-        val name = ctx.getString(if (s.mode == "notif") R.string.rat_channel_notif else R.string.rat_channel_alarm) +
+        val alarmMode = s.mode != "notif"
+        val name = ctx.getString(if (alarmMode) R.string.rat_channel_alarm else R.string.rat_channel_notif) +
             " · " + ctx.getString(if (s.son) R.string.rat_son_on else R.string.rat_son_off) +
-            " · " + ctx.getString(if (s.vibreur) R.string.rat_vib_on else R.string.rat_vib_off)
+            (if (alarmMode) "" else " · " + ctx.getString(if (s.vibreur) R.string.rat_vib_on else R.string.rat_vib_off))
         val ch = NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH)
         ch.description = ctx.getString(R.string.rat_channel_desc)
         ch.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
@@ -115,8 +121,10 @@ object Alarm {
             ch.setSound(uri, AudioAttributes.Builder().setUsage(if (alarm) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
         } else ch.setSound(null, null)
-        ch.enableVibration(s.vibreur)
-        if (s.vibreur) ch.vibrationPattern = longArrayOf(0, 600, 400, 600, 400, 600)
+        // 1.5 : une vraie alarme vibre par l'app (Buzz, toute la durée, usage ALARME) ; son canal, jamais (pas de double vibration)
+        val chVib = s.vibreur && !alarmMode
+        ch.enableVibration(chVib)
+        if (chVib) ch.vibrationPattern = longArrayOf(0, 600, 400, 600, 400, 600)
         nm.createNotificationChannel(ch)
         return id
     }
@@ -149,13 +157,16 @@ object Alarm {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             b.setFullScreenIntent(full, true).setTimeoutAfter(s.duree * 1000L)      // la sonnerie dure ce que dit ⚙
+            b.setDeleteIntent(Buzz.hushPending(ctx))                                // l'écarter d'un geste fait taire le vibreur
         }
         val n = b.build()
         if (alarm) n.flags = n.flags or Notification.FLAG_INSISTENT                // le son en boucle jusqu'au geste ou à la fin
         try { ctx.getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, n) } catch (_: SecurityException) { }
+        if (alarm && s.vibreur) Buzz.start(ctx, s.duree)
     }
 
     fun stop(ctx: Context) {
+        Buzz.stop(ctx)
         ctx.getSystemService(NotificationManager::class.java)?.cancel(NOTIF_ID)
     }
 
@@ -167,12 +178,43 @@ object Alarm {
     }
 }
 
-/** L'alarme posée par l'app (non exportée) : sonner, ou « Dans 5 min » depuis la notification. */
+/**
+ * Le vibreur d'une vraie alarme (1.5, demande d'Hadrien du 03/11 : « ça ne vibre pas alors que ça devrait »). Avant, seule la
+ * notification vibrait : trois secousses de 0,6 s, une fois, et — son coupé — la notification n'était plus une alarme pour Android,
+ * que « Ne pas déranger » ou le silencieux pouvaient faire taire. Ici l'app vibre ELLE-MÊME, en usage ALARME (comme le réveil),
+ * 0,9 s / 0,5 s pendant toute la durée de ⚙ (Rules.buzzPattern), puis s'arrête d'elle-même ; un geste (Revoir, Jouer, Dans 5 min,
+ * Retour, la notification écartée) l'arrête avant.
+ */
+object Buzz {
+    private fun vibrator(ctx: Context): Vibrator? =
+        if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
+
+    fun start(ctx: Context, secs: Int) {
+        val v = vibrator(ctx) ?: return
+        if (!v.hasVibrator()) return
+        val effect = VibrationEffect.createWaveform(Rules.buzzPattern(secs), -1)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
+            else @Suppress("DEPRECATION") v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+        } catch (_: SecurityException) { }
+    }
+
+    fun stop(ctx: Context) { try { vibrator(ctx)?.cancel() } catch (_: SecurityException) { } }
+
+    fun hushPending(ctx: Context): PendingIntent =
+        PendingIntent.getBroadcast(ctx, 14, Intent(ctx, AlarmReceiver::class.java).setAction(Alarm.ACTION_HUSH),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+}
+
+/** L'alarme posée par l'app (non exportée) : sonner, « Dans 5 min » depuis la notification, ou se taire (notification écartée). */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             Alarm.ACTION_FIRE -> Alarm.fire(ctx.applicationContext)
             Alarm.ACTION_SNOOZE -> Alarm.snooze(ctx.applicationContext)
+            Alarm.ACTION_HUSH -> Buzz.stop(ctx.applicationContext)
         }
     }
 }

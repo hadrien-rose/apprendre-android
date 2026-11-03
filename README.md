@@ -24,6 +24,7 @@ dans les secrets GitHub). L'app n'ouvre rien sans le login de son propriétaire.
   s'il ne reste rien à faire et que tu as déjà joué depuis le début de la journée (6 h par défaut), sinon elle sonne
   (« 3 nouvelles · 10 à revoir », rien d'une carte) ; Prisme muet = elle sonne quand même. Elle remplace le rappel de
   8 h des versions 1.0 à 1.3 (`Reminder` ne fait plus que l'annuler).
+- **Le vibreur** (`Buzz`, 1.5) : une vraie alarme vibre par l'app elle-même, en usage ALARME (comme le réveil : passe le silencieux et « Ne pas déranger » si les alarmes y sont permises), 0,9 s / 0,5 s pendant toute la durée de ⚙, arrêtée par un geste ; avant, seul le canal de la notification vibrait (3 × 0,6 s, une fois, et pas d'usage alarme son coupé).
 - **L'alarme des cartes ratées** (`Alarm`, 1.3) : 10 minutes après la fin de la séance. Les deux alarmes partagent la
   même sonnerie (⚙ : alarme plein écran ou notification, son, vibreur, durée) ; reposées au redémarrage, au changement
   d'heure et après une mise à jour. Android 13 et plus : l'autorisation des notifications est demandée une fois.
