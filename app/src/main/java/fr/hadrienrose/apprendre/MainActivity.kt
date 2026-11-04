@@ -49,8 +49,9 @@ import java.util.Date
  * nombre de cartes à revoir), « Retenir… » et « Partager → Apprendre » qui ouvrent « ＋ Ajouter ».
  * La fenêtre ne va que sur la page Apprendre et le login Cloudflare (code par e-mail) ; la page ne charge que son API et
  * ses polices (Rules) ; tout autre lien s'ouvre dans le navigateur. UN pont JS (1.3, 29/10) : `ApprendreNative.alarm(json)`,
- * par lequel la page pose l'alarme des cartes ratées (Alarm), `matin(json)` (1.4) et `update()` (1.6, le bouton « Mettre à jour »
- * en bas de ⚙) ; il n'écoute que la page de Prisme et ne rend rien.
+ * par lequel la page pose l'alarme des cartes ratées (Alarm), `matin(json)` (1.4), `update()` (1.6, le bouton « Mettre à jour »
+ * en bas de ⚙) et `dicterStart(prise, url)` / `dicterStop()` (1.7, « Dis-le, c'est une carte » : l'app enregistre et envoie le son
+ * à Prisme, DicterService) ; il n'écoute que la page de Prisme et ne rend que le refus du micro (`dictNativeError`).
  * Le menu de l'app = l'appui long sur son icône (« Retenir… », « Réglages », « Vérifier les mises à jour »).
  */
 class MainActivity : Activity() {
@@ -63,6 +64,7 @@ class MainActivity : Activity() {
         const val ACTION_MATIN = "fr.hadrienrose.apprendre.MATIN_OPEN"
         const val REQ_FILES = 21
         const val REQ_NOTIF = 22
+        const val REQ_MIC = 23
         private const val FIELD_FOCUSED_JS = "(function(){var t=document.activeElement;return t&&(t.tagName==='TEXTAREA'||t.tagName==='INPUT')&&t.offsetParent?1:0})()"
         private const val PREF = "apprendre"
         private const val KEY_NOTIF_ASKED = "notif_asked"
@@ -76,6 +78,8 @@ class MainActivity : Activity() {
     private var photo: File? = null
     private var pendingInstall = false
     private var progress: AlertDialog? = null
+    /** 1.7 : la prise et l'adresse du son en attente de l'autorisation du micro. */
+    private var pendingDicter: Pair<String, String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -187,6 +191,26 @@ class MainActivity : Activity() {
         fun update() {
             if (!Rules.isSiteHost(pageHost)) return
             main.post { if (!isFinishing) checkNow() }
+        }
+
+        /**
+         * 1.7, « Dis-le, c'est une carte » : la page a ouvert une PRISE chez Prisme ; l'app enregistre (DicterService, premier
+         * plan, écran éteint compris) et envoie le son à `url`. Le micro est demandé la première fois ; refusé, la page le dit.
+         */
+        @JavascriptInterface
+        fun dicterStart(prise: String?, url: String?) {
+            if (!Rules.isSiteHost(pageHost) || !Rules.isDigits(prise) || !Rules.dicterUrlOk(url)) return
+            main.post {
+                if (isFinishing) return@post
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startDicter(prise!!, url!!)
+                else { pendingDicter = Pair(prise!!, url!!); requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC) }
+            }
+        }
+
+        @JavascriptInterface
+        fun dicterStop() {
+            if (!Rules.isSiteHost(pageHost)) return
+            main.post { if (!isFinishing) startService(Intent(this@MainActivity, DicterService::class.java).setAction(DicterService.ACTION_STOP)) }
         }
 
         @JavascriptInterface
@@ -400,6 +424,25 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_NOTIF) settingsLine?.text = reminderLine()
+        if (requestCode == REQ_MIC) {
+            val p = pendingDicter; pendingDicter = null
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) { if (p != null) startDicter(p.first, p.second) }
+            else tellPage("dictNativeError", getString(R.string.dict_mic_denied))
+        }
+    }
+
+    /** 1.7 : l'enregistreur part (un service de premier plan, type micro). */
+    private fun startDicter(prise: String, url: String) {
+        val i = Intent(this, DicterService::class.java).setAction(DicterService.ACTION_START)
+            .putExtra(DicterService.EXTRA_PRISE, prise).putExtra(DicterService.EXTRA_URL, url)
+        try { startForegroundService(i) } catch (e: Exception) { tellPage("dictNativeError", getString(R.string.dict_failed, e.javaClass.simpleName)) }
+    }
+
+    /** Un mot à la page (une fonction qu'elle expose, un texte) : jamais autre chose que sur la page de Prisme. */
+    private fun tellPage(fn: String, msg: String) {
+        if (!Rules.isSiteHost(pageHost)) return
+        val js = "(function(){if(typeof window." + fn + "==='function')window." + fn + "(" + org.json.JSONObject.quote(msg) + ");})()"
+        main.post { if (!isFinishing) web.evaluateJavascript(js, null) }
     }
 
     /** « Vérifier les mises à jour » : tout de suite, et la réponse est dite (à jour, nouvelle version, ou pourquoi pas). */

@@ -2,8 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Le strict minimum. Pas de CAMERA : l'appareil photo du téléphone prend la photo pour l'app (ACTION_IMAGE_CAPTURE),
-         une app qui ne déclare pas CAMERA n'a rien à demander. Pas de micro, pas de stockage. -->
+         une app qui ne déclare pas CAMERA n'a rien à demander. Pas de stockage. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 1.7 : « Dis-le, c'est une carte » — le micro, dans un service de premier plan qui continue écran éteint (DicterService) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -84,6 +89,12 @@
         <receiver
             android:name=".InstallReceiver"
             android:exported="false" />
+
+        <service
+            android:name=".DicterService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone" />
 
         <provider
             android:name=".PhotoProvider"

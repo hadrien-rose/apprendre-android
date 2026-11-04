@@ -32,6 +32,40 @@ object Rules {
 
     fun isSiteHost(host: String?): Boolean = host.equals(HOST, ignoreCase = true)
 
+    // ---------- « Dis-le, c'est une carte » (1.7) : le son d'une prise ----------
+
+    /** Le chemin où la page fait envoyer le son d'une prise (et le seul que le service accepte). */
+    const val DICTER_AUDIO = "/api/apprendre/dicter/audio"
+    private val PRISE_RE = Regex("^prise=[0-9]{1,12}$")
+
+    fun isDigits(s: String?): Boolean = !s.isNullOrEmpty() && s.length <= 12 && s.all { it in '0'..'9' }
+
+    /** L'adresse donnée par la page : https, notre site, LE chemin du son, `?prise=<nombre>` et rien d'autre. */
+    fun dicterUrlOk(url: String?): Boolean {
+        if (url.isNullOrBlank() || url.length > 300) return false
+        val u = try { java.net.URI(url) } catch (_: Exception) { return false }
+        return u.scheme.equals("https", ignoreCase = true) && isSiteHost(u.host) && u.port == -1 && u.rawPath == DICTER_AUDIO
+            && u.rawQuery != null && PRISE_RE.matches(u.rawQuery) && u.rawFragment == null && u.rawUserInfo == null
+    }
+
+    /** « Arrêter » depuis la notification : Prisme est prié de finir la prise (même site, toujours). */
+    fun dicterStopUrl(audioUrl: String): String = "https://" + HOST + "/api/apprendre/dicter/stop"
+
+    /** `n` échantillons 16 bits → leurs octets, petit-boutiste (ce que Prisme relaie tel quel : pcm_s16le). */
+    fun pcmBytes(buf: ShortArray, n: Int): ByteArray {
+        val out = ByteArray(n * 2)
+        for (i in 0 until n) { val v = buf[i].toInt(); out[2 * i] = (v and 0xFF).toByte(); out[2 * i + 1] = ((v shr 8) and 0xFF).toByte() }
+        return out
+    }
+
+    fun concat(parts: List<ByteArray>): ByteArray {
+        val out = ByteArray(parts.sumOf { it.size }); var o = 0
+        for (p in parts) { System.arraycopy(p, 0, out, o, p.size); o += p.size }
+        return out
+    }
+
+    fun fmtSecs(s: Long): String = "%d:%02d".format(s / 60, s % 60)
+
     /** Le résultat de evaluateJavascript (« 1 », « 0 », « null », une chaîne entre guillemets) : un champ a-t-il le focus ? */
     fun wantsKeyboard(jsResult: String?): Boolean = jsResult?.trim()?.trim('"') == "1"
 

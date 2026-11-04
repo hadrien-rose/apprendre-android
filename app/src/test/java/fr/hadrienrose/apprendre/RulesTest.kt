@@ -239,4 +239,32 @@ class RulesTest {
         assertFalse(Rules.wantsKeyboard("11"))
         assertFalse(Rules.wantsKeyboard(null))
     }
+
+    // ---------- 1.7, « Dis-le, c'est une carte » : le son d'une prise ----------
+
+    @Test fun leSonNePartQueVersLeCheminDuSonDeNotreSite() {
+        assertTrue(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42"))
+        assertTrue(Rules.dicterUrlOk("https://CHAT.hadrien-rose.com/api/apprendre/dicter/audio?prise=123456789012"))
+        assertFalse(Rules.dicterUrlOk("http://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42"))
+        assertFalse(Rules.dicterUrlOk("https://autre.hadrien-rose.com/api/apprendre/dicter/audio?prise=42"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/stop?prise=42"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/audio"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42&x=1"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=abc"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com:8443/api/apprendre/dicter/audio?prise=42"))
+        assertFalse(Rules.dicterUrlOk("https://x@chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42"))
+        assertFalse(Rules.dicterUrlOk("https://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42#f"))
+        assertFalse(Rules.dicterUrlOk(""))
+        assertFalse(Rules.dicterUrlOk(null))
+        assertEquals("https://chat.hadrien-rose.com/api/apprendre/dicter/stop", Rules.dicterStopUrl("https://chat.hadrien-rose.com/api/apprendre/dicter/audio?prise=42"))
+        assertTrue(Rules.isDigits("42")); assertFalse(Rules.isDigits("")); assertFalse(Rules.isDigits("4a")); assertFalse(Rules.isDigits(null))
+    }
+
+    @Test fun lesOctetsPcmSontPetitBoutistes() {           // ce que Prisme relaie tel quel à Mistral (pcm_s16le)
+        val b = Rules.pcmBytes(shortArrayOf(1, -2, 0x1234, 9999), 3)
+        assertEquals(6, b.size)
+        assertEquals(listOf(1, 0, 0xFE, 0xFF, 0x34, 0x12), b.map { it.toInt() and 0xFF })
+        assertEquals(listOf(1, 2, 3), Rules.concat(listOf(byteArrayOf(1), byteArrayOf(2, 3))).map { it.toInt() })
+        assertEquals("0:07", Rules.fmtSecs(7)); assertEquals("12:05", Rules.fmtSecs(725))
+    }
 }

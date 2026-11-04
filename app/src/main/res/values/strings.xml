@@ -49,5 +49,12 @@
     <string name="rat_perm_body">Pour qu\'elle sonne à l\'heure exacte et en plein écran, Android demande une autorisation (« Alarmes et rappels », ou « Notifications plein écran »). Active-la, puis reviens.</string>
     <string name="rat_line_ok">Alarme des cartes ratées : prête (heure exacte, plein écran).</string>
     <string name="rat_line_exact">Alarme des cartes ratées : touche ici pour autoriser « Alarmes et rappels ».</string>
+    <string name="dict_channel">Dicter une carte</string>
+    <string name="dict_channel_desc">Pendant que tu dictes une carte : le micro reste ouvert, écran éteint compris</string>
+    <string name="dict_notif">Apprendre écoute</string>
+    <string name="dict_notif_text">Dis ta carte ; « Arrêter » quand c\'est dit.</string>
+    <string name="dict_stop">Arrêter</string>
+    <string name="dict_mic_denied">Le micro est refusé : autorise-le pour Apprendre dans les réglages d\'Android, puis réessaie.</string>
+    <string name="dict_failed">L\'enregistreur n\'a pas pu partir (%1$s).</string>
     <string name="rat_line_full">Alarme des cartes ratées : touche ici pour autoriser le plein écran.</string>
 </resources>
