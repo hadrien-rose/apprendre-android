@@ -14,12 +14,14 @@ import android.content.Intent
  * exacte (setAlarmClock) ; à l'heure, l'app demande à Prisme (/api/apprendre/matin, un oui ou non et « 3 nouvelles · 10 à
  * revoir », rien d'une carte) : elle se TAIT s'il ne reste rien à faire ET qu'Hadrien a déjà joué depuis le début de la journée
  * (jouer la veille au soir ne la tait pas) ; sinon elle sonne. Prisme muet (hors ligne, login expiré) : elle sonne quand même.
- * La sonnerie est celle des cartes ratées (⚙, un seul réglage). Toucher = l'accueil, les nouvelles d'abord. Elle remplace le
+ * 1.8 : PLUSIEURS alarmes dans la journée (`alarmes` : heure, sonne ou vibre) ; celle qui ne fait que vibrer est une notification
+ * discrète, posée sans setAlarmClock. La sonnerie est celle des cartes ratées (⚙, un seul réglage). Toucher = l'accueil, les nouvelles d'abord. Elle remplace le
  * rappel de 8 h (1.0 à 1.3), qui n'était qu'une notification sans trace.
  */
 object Matin {
     private const val PREF = "apprendre"
     private const val K_SPEC = "matin_spec"
+    private const val K_NEXT_SON = "matin_next_son"
     const val ACTION_FIRE = "fr.hadrienrose.apprendre.MATIN"
     const val ACTION_SNOOZE = "fr.hadrienrose.apprendre.MATIN_SNOOZE"
     const val NOTIF_ID = 11
@@ -46,18 +48,22 @@ object Matin {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
     /** L'instant posé pour le prochain matin coché, ou -1 (aucun jour). */
-    fun next(ctx: Context, now: Long = System.currentTimeMillis()): Long = load(ctx).let { Rules.nextMatinAt(now, it.heure, it.jours) }
+    fun next(ctx: Context, now: Long = System.currentTimeMillis()): Long = load(ctx).let { Rules.nextAlarme(now, it.alarmes, it.jours)?.first ?: -1L }
 
     /** (Re)pose l'alarme du prochain matin coché : exacte si Android le permet, sinon à quelques minutes près. */
     fun schedule(ctx: Context, from: Long = System.currentTimeMillis()) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         val pi = firePending(ctx)
         am.cancel(pi)
-        val at = next(ctx, from)
-        if (at <= 0L) return
+        val s = load(ctx)
+        val (at, son) = Rules.nextAlarme(from, s.alarmes, s.jours) ?: return
+        prefs(ctx).edit().putBoolean(K_NEXT_SON, son).apply()
         try {
-            if (Alarm.exactAllowed(ctx)) am.setAlarmClock(AlarmManager.AlarmClockInfo(at, openPending(ctx)), pi)
-            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            // 1.8 : une alarme qui ne fait que VIBRER n'est pas un réveil pour Android (pas d'icône « prochaine alarme » dans le
+            // panneau du haut, qui masquait le vrai réveil d'Hadrien) : exacte, mais sans setAlarmClock
+            if (!Alarm.exactAllowed(ctx)) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            else if (son) am.setAlarmClock(AlarmManager.AlarmClockInfo(at, openPending(ctx)), pi)
+            else am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         } catch (_: SecurityException) {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
         }
@@ -77,14 +83,15 @@ object Matin {
     /** L'heure est venue (hors du fil principal) : sonner ou se taire, puis le matin suivant. */
     fun fire(ctx: Context) {
         val (sonner, texte) = ask() ?: Pair(true, Rules.MATIN_TEXT)
-        if (sonner) show(ctx, texte)
+        if (sonner) show(ctx, texte, prefs(ctx).getBoolean(K_NEXT_SON, true))
         schedule(ctx, System.currentTimeMillis() + 60_000L)      // jamais deux fois le même matin
     }
 
-    fun show(ctx: Context, texte: String) {
+    /** `sonne` : la vraie alarme de ⚙ (plein écran, son, vibreur, durée) ; sinon une simple notification qui vibre, sans son. */
+    fun show(ctx: Context, texte: String, sonne: Boolean = true) {
         val s = load(ctx)
-        val ch = Alarm.channel(ctx, s.mode, s.son, s.vibreur)
-        val alarm = s.mode != "notif"
+        val ch = if (sonne) Alarm.channel(ctx, s.mode, s.son, s.vibreur) else Alarm.channel(ctx, "notif", false, true)
+        val alarm = sonne && s.mode != "notif"
         val snooze = PendingIntent.getBroadcast(ctx, 22, Intent(ctx, MatinReceiver::class.java).setAction(ACTION_SNOOZE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val b = Notification.Builder(ctx, ch)

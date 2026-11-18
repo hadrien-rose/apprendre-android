@@ -267,4 +267,24 @@ class RulesTest {
         assertEquals(listOf(1, 2, 3), Rules.concat(listOf(byteArrayOf(1), byteArrayOf(2, 3))).map { it.toInt() })
         assertEquals("0:07", Rules.fmtSecs(7)); assertEquals("12:05", Rules.fmtSecs(725))
     }
+
+    // ---------- 1.8 : plusieurs alarmes dans la journée ----------
+
+    @Test fun plusieursAlarmesChacuneSonneOuVibre() {
+        val m = Rules.parseMatin("{\"heure\": \"08:50\", \"jours\": [0,1,2,3,4], \"alarmes\": [{\"heure\": \"12:00\", \"son\": false}, {\"heure\": \"08:50\", \"son\": true}]}")!!
+        assertEquals(listOf(Rules.Alarme("08:50", true), Rules.Alarme("12:00", false)), m.alarmes)        // rangées par heure
+        // une page d'avant : une seule alarme, celle de `heure`, qui sonne
+        assertEquals(listOf(Rules.Alarme("07:15", true)), Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": [6]}")!!.alarmes)
+        assertEquals(emptyList<Rules.Alarme>(), Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": [6], \"alarmes\": []}")!!.alarmes)
+        assertNull(Rules.parseMatin("{\"heure\": \"07:15\", \"jours\": [6], \"alarmes\": [{\"heure\": \"25:00\"}]}"))
+        // mercredi 18/11/2026, 10 h à Paris : la prochaine est celle de midi, qui vibre ; à 13 h, celle de 8 h 50 demain, qui sonne
+        val n1 = Rules.nextAlarme(paris("2026-11-18T10:00:00+01:00"), m.alarmes, m.jours)!!
+        assertEquals(paris("2026-11-18T12:00:00+01:00"), n1.first); assertFalse(n1.second)
+        val n2 = Rules.nextAlarme(paris("2026-11-18T13:00:00+01:00"), m.alarmes, m.jours)!!
+        assertEquals(paris("2026-11-19T08:50:00+01:00"), n2.first); assertTrue(n2.second)
+        // vendredi après midi : lundi matin (le week-end n'est pas coché)
+        assertEquals(paris("2026-11-23T08:50:00+01:00"), Rules.nextAlarme(paris("2026-11-20T12:30:00+01:00"), m.alarmes, m.jours)!!.first)
+        assertNull(Rules.nextAlarme(paris("2026-11-18T10:00:00+01:00"), emptyList(), m.jours))
+        assertNull(Rules.nextAlarme(paris("2026-11-18T10:00:00+01:00"), m.alarmes, emptySet()))
+    }
 }

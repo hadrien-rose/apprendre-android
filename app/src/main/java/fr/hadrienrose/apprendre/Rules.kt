@@ -246,8 +246,12 @@ object Rules {
     // ---------- l'alarme du matin (1.4, chantier 4 du 30/10, maquette apprendre-cartes-du-jour) ----------
 
     /** Ce que la page envoie par ApprendreNative.matin : l'heure, les jours cochés (0 = lundi), le début de la journée, la sonnerie. */
+    /** Une alarme de la journée (1.8) : son heure, et si elle SONNE (la vraie alarme de ⚙) ou ne fait que vibrer. */
+    data class Alarme(val heure: String, val son: Boolean)
+
     data class MatinSpec(val heure: String, val jours: Set<Int>, val debut: String, val mode: String, val son: Boolean, val vibreur: Boolean,
-                         val duree: Int)
+                         val duree: Int,
+        val alarmes: List<Alarme> = listOf(Alarme(heure, true)))
 
     /** Les réglages par défaut, avant que la page ait parlé (son choix : 8 h 50, du lundi au vendredi, une vraie alarme). */
     val MATIN_DEFAULT = MatinSpec("08:50", setOf(0, 1, 2, 3, 4), "06:00", "alarme", true, true, 60)
@@ -262,9 +266,23 @@ object Rules {
         val jours = mutableSetOf<Int>()
         for (i in 0 until a.length()) { val d = a.optInt(i, -1); if (d !in 0..6) return null; jours.add(d) }
         val duree = o.optInt("duree", 60).let { if (it in ALARM_DUREES) it else 60 }
+        // 1.8 : plusieurs alarmes dans la journée, chacune sonne ou vibre ; une page d'avant n'en dit qu'une (`heure`), qui sonne
+        val al = ArrayList<Alarme>()
+        val arr = o.optJSONArray("alarmes")
+        if (arr != null) for (i in 0 until minOf(arr.length(), 12)) {
+            val x = arr.optJSONObject(i) ?: return null
+            val h = x.optString("heure")
+            if (!HHMM.matches(h)) return null
+            al.add(Alarme(h, x.optBoolean("son", false)))
+        }
+        if (arr == null) al.add(Alarme(heure, true))
         return MatinSpec(heure, jours, debut, if (o.optString("mode") == "notif") "notif" else "alarme", o.optBoolean("son", true),
-            o.optBoolean("vibreur", true), duree)
+            o.optBoolean("vibreur", true), duree, al.sortedBy { it.heure })
     }
+
+    /** La prochaine alarme de la journée (instant, sonne ?) STRICTEMENT après `now`, un jour coché ; null s'il n'y en a pas. */
+    fun nextAlarme(now: Long, alarmes: List<Alarme>, jours: Set<Int>): Pair<Long, Boolean>? =
+        alarmes.map { Pair(nextMatinAt(now, it.heure, jours), it.son) }.filter { it.first > 0L }.minByOrNull { it.first }
 
     /** Le prochain matin coché, STRICTEMENT après `now`, à l'heure dite (Paris) ; -1 si aucun jour n'est coché. */
     fun nextMatinAt(now: Long, heure: String, jours: Set<Int>): Long {
